@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';" />
+  <title>学习时间记录</title>
+  <link rel="stylesheet" type="text/css" href="./styles.css">
+</head>
+
+<body data-theme="light">
+  <!-- 顶部拖拽栏 -->
+  <div class="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-brand" id="titlebar-brand">
+        <span class="brand-name">学习时间记录</span>
+        <span class="brand-version" id="brand-version"></span>
+      </span>
+    </div>
+    <div class="titlebar-actions">
+      <button class="tb-btn" id="check-update-btn" title="检查更新">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 19V7"></path>
+          <polyline points="7 12 12 7 17 12"></polyline>
+        </svg>
+        <span class="tb-badge" aria-hidden="true"></span>
+      </button>
+      <button class="tb-btn" id="settings-toggle-btn" title="设置面板">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+      <button class="tb-btn" id="theme-toggle-btn" title="切换主题">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+        </svg>
+      </button>
+      <button class="tb-btn" id="mini-toggle-btn" title="切换迷你模式">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="6" width="16" height="12" rx="1.5"></rect>
+          <line x1="4" y1="12" x2="20" y2="12"></line>
+        </svg>
+      </button>
+      <button class="tb-btn" id="minimize-btn" title="最小化到托盘">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+          <line x1="5" y1="14" x2="19" y2="14"></line>
+        </svg>
+      </button>
+      <button class="tb-btn tb-btn-close" id="close-btn" title="退出应用">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+          <line x1="6" y1="18" x2="18" y2="6"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 主面板 -->
+  <div class="study-status">
+    <div class="study-content">
+      <!-- 今日数据展示区 -->
+      <div id="today-time">
+        <div class="progress-ring-wrapper">
+          <svg class="progress-ring" width="76" height="76" viewBox="0 0 76 76">
+            <defs>
+              <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="var(--accent)"></stop>
+                <stop offset="100%" stop-color="var(--accent-2, var(--accent))"></stop>
+              </linearGradient>
+            </defs>
+            <circle class="progress-ring-bg" cx="38" cy="38" r="32" fill="none" stroke-width="5"></circle>
+            <circle class="progress-ring-fg" cx="38" cy="38" r="32" fill="none" stroke-width="5"
+                    stroke-dasharray="201.06" stroke-dashoffset="201.06" stroke-linecap="round"></circle>
+          </svg>
+          <div class="progress-ring-center">
+            <span id="progress-percent">0</span><span class="ring-unit">%</span>
+          </div>
+        </div>
+        <div class="today-info">
+          <div class="label-row">
+            <span class="status-dot" id="status-dot"></span>
+            <span class="label">今日学习</span>
+            <span class="streak-badge" id="streak-badge" title="连续学习天数">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"></path></svg>
+              <span id="streak-text">0</span>
+            </span>
+          </div>
+          <div id="today-duration"><span class="digits">00:00:00</span><span class="mini-percent" id="mini-percent">0%</span></div>
+          <div class="mini-progress-bar" id="mini-progress-bar"></div>
+          <div class="meta-row">
+            <span id="goal-info">目标 2h · 剩余 2h</span>
+            <span class="inline-quote" id="inline-quote" title="每日寄语">心若有所向，平凡亦有光。</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 主操作按钮 -->
+      <div class="btn-group">
+        <button id="start-btn" title="快捷键：Ctrl+Alt+S">
+          <svg class="btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="6,4 20,12 6,20"></polygon>
+          </svg>
+          <span>开始记录</span>
+        </button>
+        <button id="end-btn" title="快捷键：Ctrl+Alt+E" disabled>
+          <svg class="btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="1"></rect>
+          </svg>
+          <span>结束记录</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 设置面板：SVG 图标网格 -->
+    <div class="settings-content hidden">
+      <div class="settings-header">
+        <span class="settings-title">设置面板</span>
+        <button class="settings-close-btn" id="settings-close-btn">×</button>
+      </div>
+      <div class="settings-grid">
+      <button class="settings-card" id="set-time-range">
+        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
+        <span>时间区间</span>
+      </button>
+      <button class="settings-card" id="set-goal">
+        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor"></circle></svg>
+        <span>学习目标</span>
+      </button>
+      <button class="settings-card" id="history-fab">
+        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h12"></path></svg>
+        <span>学习历史</span>
+      </button>
+      <button class="settings-card" id="open-stats">
+        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="18" y1="20" x2="18" y2="14"></line></svg>
+        <span>数据统计</span>
+      </button>
+      <button class="settings-card" id="open-tags">
+        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+        <span>标签管理</span>
+      </button>
+      <button class="settings-card" id="open-badges">
+        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"></circle><path d="M15.5 13L17 22l-5-3-5 3 1.5-9"></path></svg>
+        <span>我的徽章</span>
+      </button>
+      <button class="settings-card" id="open-quotes">
+        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l1.7-5.1A9 9 0 1 1 8.1 19.3z"></path></svg>
+        <span>每日寄语</span>
+      </button>
+      <button class="settings-card" id="open-export">
+        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <span>导出数据</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 右侧菜单条 -->
+  <div class="right-menus">
+    <div class="menus-body">
+      <span id="setting-icon" title="设置面板">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </span>
+      <span id="word-icon" title="每日寄语">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+        </svg>
+      </span>
+    </div>
+  </div>
+
+
+  <!-- =============== 弹窗系统 =============== -->
+
+  <!-- 学习历史弹窗 -->
+  <div id="history-modal" class="hidden modal-root">
+    <div id="history-modal-backdrop" class="modal-backdrop"></div>
+    <div id="history-modal-content" class="modal-panel modal-center modal-md">
+      <div class="modal-header">
+        <span class="modal-title">学习历史</span>
+        <button class="modal-close-btn" id="close-history-btn">×</button>
+      </div>
+      <div class="modal-body">
+        <ul id="history-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- 时间区间设置弹窗 -->
+  <div id="time-range-modal" class="hidden modal-root">
+    <div id="time-range-backdrop" class="modal-backdrop"></div>
+    <div id="time-range-content" class="modal-panel modal-center modal-sm">
+      <div class="modal-header">
+        <span class="modal-title">统计时间区间</span>
+        <button class="modal-close-btn" id="time-range-close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-item-wrapper">
+          <div class="form-item">
+            <label>开始时间</label>
+            <input type="time" id="time-range-start">
+          </div>
+          <div class="form-item">
+            <label>结束时间</label>
+            <input type="time" id="time-range-end">
+          </div>
+        </div>
+        <div class="form-hint">如 05:00 - 05:00 表示一天从凌晨 5 点算起，到次日 5 点结束</div>
+      </div>
+      <div class="modal-footer">
+        <button id="time-range-cancel">取消</button>
+        <button id="time-range-confirm" class="primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 目标设定弹窗 -->
+  <div id="goal-modal" class="hidden modal-root">
+    <div class="modal-backdrop" data-close="goal-modal"></div>
+    <div class="modal-panel modal-center modal-sm">
+      <div class="modal-header">
+        <span class="modal-title">学习目标</span>
+        <button class="modal-close-btn" data-close="goal-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-item-wrapper">
+          <div class="form-item">
+            <label>每日目标</label>
+            <div class="input-with-unit">
+              <input type="number" id="goal-daily" min="0.5" max="24" step="0.5" value="2">
+              <span class="unit-suffix">小时</span>
+            </div>
+          </div>
+          <div class="form-item">
+            <label>每周目标</label>
+            <div class="input-with-unit">
+              <input type="number" id="goal-weekly" min="1" max="168" step="1" value="10">
+              <span class="unit-suffix">小时</span>
+            </div>
+          </div>
+        </div>
+        <div class="form-hint">完成目标会触发徽章解锁与进度环高亮</div>
+      </div>
+      <div class="modal-footer">
+        <button data-close="goal-modal">取消</button>
+        <button id="goal-confirm" class="primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 数据统计弹窗 -->
+  <div id="stats-modal" class="hidden modal-root">
+    <div class="modal-backdrop" data-close="stats-modal"></div>
+    <div class="modal-panel modal-center modal-lg">
+      <div class="modal-header">
+        <span class="modal-title">数据统计</span>
+        <button class="modal-close-btn" data-close="stats-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="stats-grid">
+          <div class="stats-card">
+            <div class="sc-label">累计时长</div>
+            <div class="sc-value" id="ov-total">0h</div>
+          </div>
+          <div class="stats-card">
+            <div class="sc-label">最长连续</div>
+            <div class="sc-value" id="ov-max-streak">0 天</div>
+          </div>
+          <div class="stats-card">
+            <div class="sc-label">总记录数</div>
+            <div class="sc-value" id="ov-sessions">0</div>
+          </div>
+        </div>
+
+        <div class="stats-section">
+          <div class="stats-section-title">最近 7 天</div>
+          <div class="week-chart" id="week-chart"></div>
+        </div>
+
+        <div class="stats-section">
+          <div class="stats-section-title">
+            <span>最近 35 天热力图</span>
+            <span class="heatmap-legend">
+              <span>少</span>
+              <span class="legend-cell l0"></span>
+              <span class="legend-cell l1"></span>
+              <span class="legend-cell l2"></span>
+              <span class="legend-cell l3"></span>
+              <span class="legend-cell l4"></span>
+              <span>多</span>
+            </span>
+          </div>
+          <div class="heatmap" id="heatmap"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 标签管理弹窗 -->
+  <div id="tag-modal" class="hidden modal-root">
+    <div class="modal-backdrop" data-close="tag-modal"></div>
+    <div class="modal-panel modal-center modal-md">
+      <div class="modal-header">
+        <span class="modal-title">标签管理</span>
+        <button class="modal-close-btn" data-close="tag-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="tag-list" id="tag-list"></div>
+      </div>
+      <!-- 图标选择面板（放在 modal-body 外避免被裁剪） -->
+      <div id="tag-icon-picker" class="icon-picker-panel hidden">
+        <div class="icon-picker-grid">
+          <button class="icon-option" data-icon="🏷️">🏷️</button>
+          <button class="icon-option" data-icon="📚">📚</button>
+          <button class="icon-option" data-icon="💻">💻</button>
+          <button class="icon-option" data-icon="📖">📖</button>
+          <button class="icon-option" data-icon="🗣️">🗣️</button>
+          <button class="icon-option" data-icon="✏️">✏️</button>
+          <button class="icon-option" data-icon="🎨">🎨</button>
+          <button class="icon-option" data-icon="🎵">🎵</button>
+          <button class="icon-option" data-icon="🏃">🏃</button>
+          <button class="icon-option" data-icon="🧘">🧘</button>
+          <button class="icon-option" data-icon="🔬">🔬</button>
+          <button class="icon-option" data-icon="🧮">🧮</button>
+          <button class="icon-option" data-icon="🌍">🌍</button>
+          <button class="icon-option" data-icon="🎯">🎯</button>
+          <button class="icon-option" data-icon="💡">💡</button>
+          <button class="icon-option" data-icon="📝">📝</button>
+          <button class="icon-option" data-icon="🎓">🎓</button>
+          <button class="icon-option" data-icon="🔧">🔧</button>
+          <button class="icon-option" data-icon="📊">📊</button>
+          <button class="icon-option" data-icon="🎮">🎮</button>
+          <button class="icon-option" data-icon="🍳">🍳</button>
+          <button class="icon-option" data-icon="🚀">🚀</button>
+          <button class="icon-option" data-icon="⭐">⭐</button>
+          <button class="icon-option" data-icon="❤️">❤️</button>
+        </div>
+      </div>
+      <div class="modal-footer tag-footer">
+        <div class="inline-add-row">
+          <button id="tag-icon-trigger" class="icon-picker-btn" title="选择图标">
+            <span id="tag-icon-preview">🏷️</span>
+          </button>
+          <input type="color" id="new-tag-color" value="#7e9fff" title="选择颜色">
+          <input type="text" id="new-tag-name" placeholder="标签名称…" maxlength="20">
+          <button id="add-tag-btn" class="primary">加</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 徽章弹窗 -->
+  <div id="badge-modal" class="hidden modal-root">
+    <div class="modal-backdrop" data-close="badge-modal"></div>
+    <div class="modal-panel modal-center modal-md">
+      <div class="modal-header">
+        <span class="modal-title">我的徽章</span>
+        <button class="modal-close-btn" data-close="badge-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="badge-grid" id="badge-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导出弹窗 -->
+  <div id="export-modal" class="hidden modal-root">
+    <div class="modal-backdrop" data-close="export-modal"></div>
+    <div class="modal-panel modal-center modal-sm">
+      <div class="modal-header">
+        <span class="modal-title">导出学习数据</span>
+        <button class="modal-close-btn" data-close="export-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">将所有学习记录导出，便于备份或分析。</p>
+        <div class="export-options">
+          <button class="export-option" id="export-csv">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+            <div class="export-info">
+              <div class="export-title">CSV 表格</div>
+            </div>
+          </button>
+          <button class="export-option" id="export-json">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+            <div class="export-info">
+              <div class="export-title">JSON 数据</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 寄语管理弹窗 -->
+  <div id="quotes-modal" class="hidden modal-root">
+    <div class="modal-backdrop" data-close="quotes-modal"></div>
+    <div class="modal-panel modal-center modal-md">
+      <div class="modal-header">
+        <span class="modal-title">每日寄语</span>
+        <span class="header-meta" id="quotes-count">0</span>
+        <button class="modal-close-btn" data-close="quotes-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="quote-list" id="quote-list"></div>
+      </div>
+      <div class="modal-footer">
+        <div class="inline-add-row">
+          <input type="text" id="new-quote-text" placeholder="写下一句鼓励自己的话…" maxlength="40">
+          <span class="char-counter" id="quote-char-counter">0/40</span>
+          <button id="add-quote-btn" class="primary">加</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 消息提示弹窗 -->
+  <div id="message-modal" class="hidden modal-root">
+    <div id="message-backdrop" class="modal-backdrop"></div>
+    <div id="message-content" class="modal-panel modal-center modal-xs">
+      <div class="modal-body">
+        <div id="message-text"></div>
+      </div>
+      <div class="modal-footer center">
+        <button id="message-ok" class="primary">知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 徽章解锁动画 -->
+  <div id="badge-unlock-toast" class="hidden">
+    <div class="badge-unlock-card">
+      <div class="badge-unlock-icon" id="unlock-icon">🏆</div>
+      <div class="badge-unlock-title">徽章解锁！</div>
+      <div class="badge-unlock-name" id="unlock-name">-</div>
+      <div class="badge-unlock-desc" id="unlock-desc">-</div>
+    </div>
+  </div>
+
+  <!-- 更新弹窗（自渲染，替代系统 dialog） -->
+  <div id="update-modal" class="hidden modal-root">
+    <div class="modal-backdrop" data-close="update-modal"></div>
+    <div class="modal-panel modal-md update-panel">
+      <div class="modal-header">
+        <span class="modal-title">发现新版本</span>
+        <span class="header-meta" id="update-version-tag">—</span>
+        <button class="modal-close-btn" data-close="update-modal">×</button>
+      </div>
+      <div class="modal-body update-notes" id="update-notes"></div>
+      <div class="modal-footer">
+        <button id="update-later-btn">稍后</button>
+        <button id="update-now-btn" class="primary">立即更新</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 标签绑定浮层（会话↔标签多对多） -->
+  <div id="session-tags-popover" class="hidden" role="dialog" aria-label="标签绑定">
+    <div class="stp-arrow"></div>
+    <div class="stp-header">
+      <span class="stp-title">标签</span>
+      <button class="stp-close" data-stp-close>×</button>
+    </div>
+    <div class="stp-body" id="stp-options"></div>
+    <div class="stp-empty hidden" id="stp-empty">暂无标签，先到 <span>设置 · 标签管理</span> 添加</div>
+  </div>
+
+  <!-- 吐司通知 -->
+  <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="renderer.js"></script>
+</body>
+
+</html>

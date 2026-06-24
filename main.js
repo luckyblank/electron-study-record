@@ -13,10 +13,36 @@ const {
 const path = require('node:path')
 const fs = require('node:fs')
 const sqlite3 = require('sqlite3').verbose()
+const log = require('electron-log')
 
 const CONFIG = require('./config.js')
 const { runMigrations } = require('./database-migrator.js')
 const { initAutoUpdater } = require('./auto-updater.js')
+
+// 全局未捕获异常落盘——打包后没 DevTools 时也能看错误
+// 日志位置：%USERPROFILE%/AppData/Roaming/study-time-record/logs/main.log
+log.transports.file.level = 'info'
+log.info('[Startup] electron app booting...')
+process.on('uncaughtException', (err) => {
+  log.error('[uncaughtException]', err && err.stack || err)
+})
+process.on('unhandledRejection', (reason) => {
+  log.error('[unhandledRejection]', reason && reason.stack || reason)
+})
+
+// 包装 ipcMain.handle，让每个 handler 的异常都带通道名 + 完整 stack 落到 main.log
+// 这样渲染端看到 "Error invoking remote method 'study:xxx'" 时可以查日志找到根因
+const _originalHandle = ipcMain.handle.bind(ipcMain)
+ipcMain.handle = (channel, fn) => {
+  _originalHandle(channel, async (event, ...args) => {
+    try {
+      return await fn(event, ...args)
+    } catch (e) {
+      log.error(`[IPC] ${channel} 失败:`, e && e.stack || e)
+      throw e  // 仍然抛出，让渲染端 .catch 拿到
+    }
+  })
+}
 
 let db
 let mainWindow = null
@@ -69,8 +95,29 @@ function getAll(sql, params = []) {
 // =============== 资源路径 ===============
 function getDatabasePath() {
   if (app.isPackaged) {
-    // 生产：解包到 resources/app.asar.unpacked/outer/ 下，使用正式文件名
-    return path.join(process.resourcesPath, 'app.asar.unpacked', 'outer', CONFIG.db.fileName)
+    // 生产：放到 userData（用户可写目录，每个 Windows 用户独立）
+    // 路径示例：%APPDATA%\study-time-record\study_time.db
+    // 不能放 app.asar.unpacked/outer：Program Files 默认无写权限，sqlite3 报 SQLITE_READONLY
+    const userDbPath = path.join(app.getPath('userData'), CONFIG.db.fileName)
+
+    // 首次启动：把包内自带的"种子 db"拷到 userData
+    // 种子位置：resources/app.asar.unpacked/outer/<fileName>
+    if (!fs.existsSync(userDbPath)) {
+      const seedPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'outer', CONFIG.db.fileName)
+      try {
+        if (fs.existsSync(seedPath)) {
+          fs.mkdirSync(path.dirname(userDbPath), { recursive: true })
+          fs.copyFileSync(seedPath, userDbPath)
+          console.log('[DB] 已从种子库初始化到 userData:', userDbPath)
+        } else {
+          console.log('[DB] 未找到种子库，将由迁移脚本新建空库:', userDbPath)
+          fs.mkdirSync(path.dirname(userDbPath), { recursive: true })
+        }
+      } catch (e) {
+        console.warn('[DB] 拷贝种子库失败，继续用空库:', e.message)
+      }
+    }
+    return userDbPath
   }
   // 开发：用单独的 .dev.db，避免污染将来要打包带出的初始库
   return path.join(__dirname, 'outer', CONFIG.db.fileNameDev)
@@ -262,7 +309,9 @@ function registerGlobalShortcuts(win) {
     [CONFIG.shortcuts.end, () => win.webContents.send('global-shortcut', 'end')],
     [CONFIG.shortcuts.quit, () => safeQuit(win)],
     [CONFIG.shortcuts.closeWindow, () => win.close()],
-    [CONFIG.shortcuts.showWindow, () => win.show()]
+    [CONFIG.shortcuts.showWindow, () => win.show()],
+    [CONFIG.shortcuts.toggleMiniMode, () => win.webContents.send('global-shortcut', 'toggleMiniMode')],
+    [CONFIG.shortcuts.toggleTheme, () => win.webContents.send('global-shortcut', 'toggleTheme')]
   ]
 
   for (const [key, handler] of map) {

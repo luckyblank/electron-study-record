@@ -39,7 +39,9 @@ const CONFIG = {
     end: 'Ctrl+Alt+E',
     showWindow: 'Ctrl+Alt+1',
     closeWindow: 'Ctrl+Alt+2',
-    quit: 'Ctrl+Alt+Q'
+    quit: 'Ctrl+Alt+Q',
+    toggleMiniMode: 'Ctrl+Alt+M',
+    toggleTheme: 'Ctrl+Alt+T'
   },
 
   // 番茄钟默认配置

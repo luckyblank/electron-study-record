@@ -816,7 +816,9 @@ async function startSession() {
 
     showToast('▶ 已开始记录', 'success', 2200, true)
   } catch (e) {
-    showToast('开始失败: ' + e.message, 'warning', 3000)
+    console.error('[startSession] 失败:', e)
+    console.error('[startSession] stack:', e && e.stack)
+    showToast('开始失败: ' + (e && e.message ? e.message : e), 'warning', 4000)
   } finally {
     sessionOpLock = false
   }
@@ -845,7 +847,9 @@ async function endSession() {
     await loadHistoryAndToday()
     showToast('⏹ 已结束记录', 'info', 2200, true)
   } catch (e) {
-    showToast('结束失败: ' + e.message, 'warning', 3000)
+    console.error('[endSession] 失败:', e)
+    console.error('[endSession] stack:', e && e.stack)
+    showToast('结束失败: ' + (e && e.message ? e.message : e), 'warning', 4000)
   } finally {
     sessionOpLock = false
   }
@@ -1544,6 +1548,10 @@ function bindGlobalShortcuts() {
         try { await endSession() } catch (e) {}
       }
       window.studyRecord.confirmSessionEndedForQuit()
+    } else if (action === 'toggleMiniMode') {
+      toggleMiniMode()
+    } else if (action === 'toggleTheme') {
+      toggleTheme()
     }
   })
 

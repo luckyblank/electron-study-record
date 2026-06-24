@@ -54,6 +54,8 @@ Registered in `registerGlobalShortcuts(win)`:
 | Ctrl+Alt+1  | Show window                                       |
 | Ctrl+Alt+2  | Close window (hides to tray, per close handler)   |
 | Ctrl+Alt+Q  | `safeQuit` — flush end-session then quit          |
+| Ctrl+Alt+M  | Toggle mini mode (sends `global-shortcut: 'toggleMiniMode'`) |
+| Ctrl+Alt+T  | Toggle theme (sends `global-shortcut: 'toggleTheme'`)         |
 
 Start/end shortcuts are handled by the renderer (`window.studyRecord.onGlobalShortcut`) which programmatically clicks the corresponding button so UI state stays consistent.
 

@@ -28,7 +28,7 @@
       ]
     },
     "asarUnpack": [
-      "outer"
+      "outer/study_time.db"
     ],
     "nsis": {
       "oneClick": false,

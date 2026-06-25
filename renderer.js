@@ -9,6 +9,34 @@ const TIMER_INTERVALS = {
 }
 const TWO_HOURS_SECONDS = 2 * 60 * 60
 const PROGRESS_RING_CIRCUMFERENCE = 201.06  // 2π × 32
+const PET_STATES = {
+  IDLE: 'idle',
+  STUDYING: 'studying',
+  PAUSED: 'paused',
+  CELEBRATE: 'celebrate',
+  TIRED: 'tired',
+  LEVEL_UP: 'levelup'
+}
+const PET_META = {
+  cat: {
+    id: 'cat',
+    name: '学霸猫',
+    accent: 'var(--accent)',
+    unlockHint: '默认伙伴，陪你从第一分钟开始。'
+  },
+  dog: {
+    id: 'dog',
+    name: '努力汪',
+    accent: 'var(--success)',
+    unlockHint: '累计学习 10 小时，或连续学习 7 天。'
+  },
+  owl: {
+    id: 'owl',
+    name: '智慧鸮',
+    accent: 'var(--warning)',
+    unlockHint: '获得 5 个徽章，或累计学习 50 小时。'
+  }
+}
 
 // ---------- 状态 ----------
 let currentSessionId = null
@@ -20,6 +48,9 @@ let updateTimer = null
 let todayTimeUpdateTimer = null
 let lastDisplaySeconds = -1
 let sessionOpLock = false  // 防止快速双击竞态
+let updateModalOpen = false
+let updateInstalling = false
+let updateAccepted = false
 
 // ---------- 时间工具 ----------
 function formatDuration(sec) {
@@ -120,6 +151,34 @@ function getCurrentSessionElapsedSeconds(now = new Date()) {
   return Math.max(0, elapsed)
 }
 
+let petManager = null
+
+function getSessionDurationSeconds(item) {
+  const st = parseChinaTime(item.start_time)
+  const ed = parseChinaTime(item.end_time)
+  if (Number.isNaN(st.getTime()) || Number.isNaN(ed.getTime()) || ed <= st) return 0
+  const pausedDuration = Math.max(0, parseInt(item.paused_duration, 10) || 0)
+  return Math.max(0, Math.floor((ed - st) / 1000) - pausedDuration)
+}
+
+function getSessionSecondsInBounds(item, startBound, endBound) {
+  const st = parseChinaTime(item.start_time)
+  const ed = parseChinaTime(item.end_time)
+  if (Number.isNaN(st.getTime()) || Number.isNaN(ed.getTime()) || ed <= st) return 0
+
+  const overlapStart = st > startBound ? st : startBound
+  const overlapEnd = ed < endBound ? ed : endBound
+  if (overlapEnd <= overlapStart) return 0
+
+  const rawSeconds = Math.floor((ed - st) / 1000)
+  const totalSeconds = getSessionDurationSeconds(item)
+  if (rawSeconds <= 0 || totalSeconds <= 0) return 0
+
+  const overlapSeconds = Math.floor((overlapEnd - overlapStart) / 1000)
+  if (overlapSeconds >= rawSeconds) return totalSeconds
+  return Math.min(totalSeconds, Math.floor(overlapSeconds * totalSeconds / rawSeconds))
+}
+
 // ---------- 今日时长计算 ----------
 async function calculateTodaySeconds() {
   const list = await window.studyRecord.getAllSessions()
@@ -139,20 +198,14 @@ async function calculateTodaySeconds() {
   let todaySeconds = 0
   list.forEach((item) => {
     if (!item.end_time) return
+    if (startBound) {
+      todaySeconds += getSessionSecondsInBounds(item, startBound, endBound)
+      return
+    }
+
     const st = parseChinaTime(item.start_time)
-
-    const inRange = startBound
-      ? (st >= startBound && st < endBound)
-      : inStatRange(st, fallbackTimeRange, now)
-
-    if (inRange) {
-      if (item.duration) {
-        todaySeconds += item.duration
-      } else {
-        const ed = parseChinaTime(item.end_time)
-        const dur = Math.floor((ed - st) / 1000)
-        if (dur > 0) todaySeconds += dur
-      }
+    if (inStatRange(st, fallbackTimeRange, now)) {
+      todaySeconds += getSessionDurationSeconds(item)
     }
   })
   return todaySeconds
@@ -231,6 +284,11 @@ async function updateTodayDuration() {
 
   // 里程碑庆祝
   checkMilestones(todaySeconds)
+
+  if (petManager && currentSessionStartTime && !isPaused) {
+    const elapsed = getCurrentSessionElapsedSeconds()
+    if (elapsed >= TWO_HOURS_SECONDS) petManager.showTiredWarning()
+  }
 
   // 2小时通知
   await maybeNotifyHourly(todaySeconds)
@@ -374,6 +432,9 @@ function renderHistoryItem(item) {
 
   const tagIds = item.tag_ids || ''
   const noteAttr = escapeHtml(item.note || '')
+  const durationText = item.end_time
+    ? formatDuration(getSessionDurationSeconds(item))
+    : (item.paused_at ? '已暂停' : '计时中')
   li.innerHTML = `
     <div class="nm-history-card ${item.end_time ? '' : 'ongoing'}" data-session-id="${item.id}" data-tag-ids="${tagIds}" data-note="${noteAttr}">
       <div class="nm-card-left">
@@ -387,7 +448,7 @@ function renderHistoryItem(item) {
             <span class="nm-time-sep">—</span>
             <span class="nm-time-end">${ed ? formatHistoryTime(ed) : (item.paused_at ? '已暂停' : '进行中…')}</span>
           </div>
-          <span class="nm-duration">${item.duration ? formatDuration(item.duration) : (item.end_time ? '00:00:00' : (item.paused_at ? '已暂停' : '计时中'))}</span>
+          <span class="nm-duration">${durationText}</span>
           ${deleteBtn}
         </div>
         ${tagsHtml}
@@ -410,6 +471,26 @@ function escapeHtml(s) {
   })[ch])
 }
 
+function renderEmptyState(title = '暂无记录', desc = '', extraClass = '') {
+  return `
+    <div class="empty-state ${extraClass}">
+      <div class="empty-state-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 6h8"></path>
+          <path d="M8 10h8"></path>
+          <path d="M8 14h5"></path>
+          <rect x="5" y="3" width="14" height="18" rx="3"></rect>
+        </svg>
+      </div>
+      <div class="empty-state-title">${escapeHtml(title)}</div>
+      ${desc ? `<div class="empty-state-desc">${escapeHtml(desc)}</div>` : ''}
+    </div>`
+}
+
+function renderErrorState(title = '加载失败', desc = '请稍后重试') {
+  return renderEmptyState(title, desc, 'is-error')
+}
+
 // ---------- 历史 + 今日总加载 ----------
 async function loadHistoryAndToday() {
   try {
@@ -422,18 +503,22 @@ async function loadHistoryAndToday() {
     currentSessionPausedAt = null
     if (historyListEl) {
       historyListEl.innerHTML = ''
-      list.forEach((item) => {
-        if (!item.end_time) {
-          currentSessionId = item.id
-          currentSessionStartTime = parseChinaTime(item.start_time)
-          currentSessionPausedDuration = parseInt(item.paused_duration, 10) || 0
-          isPaused = !!item.paused_at
-          currentSessionPausedAt = item.paused_at ? parseChinaTime(item.paused_at) : null
-        }
-        historyListEl.appendChild(renderHistoryItem(item))
-      })
-      attachHistoryDeleteHandlers()
-      attachHistoryTagHandlers()
+      if (!list.length) {
+        historyListEl.innerHTML = `<li class="history-empty-item">${renderEmptyState('暂无学习记录', '开始一次学习后，这里会显示历史记录。', 'history-empty')}</li>`
+      } else {
+        list.forEach((item) => {
+          if (!item.end_time) {
+            currentSessionId = item.id
+            currentSessionStartTime = parseChinaTime(item.start_time)
+            currentSessionPausedDuration = parseInt(item.paused_duration, 10) || 0
+            isPaused = !!item.paused_at
+            currentSessionPausedAt = item.paused_at ? parseChinaTime(item.paused_at) : null
+          }
+          historyListEl.appendChild(renderHistoryItem(item))
+        })
+        attachHistoryDeleteHandlers()
+        attachHistoryTagHandlers()
+      }
     } else {
       // 至少更新 currentSession 状态
       list.forEach(item => {
@@ -821,11 +906,10 @@ async function historyDelete(id) {
 // ---------- 连续打卡 ----------
 async function updateStreakDisplay() {
   try {
-    const v = await window.studyRecord.getConfig('current_streak')
-    const streak = v ? parseInt(v, 10) || 0 : 0
+    const streak = await window.studyRecord.getCurrentStreak()
     const textEl = document.getElementById('streak-text')
     const badge = document.getElementById('streak-badge')
-    if (textEl) textEl.textContent = String(streak)
+    if (textEl) textEl.textContent = String(streak || 0)
     if (badge) badge.style.display = streak > 0 ? 'inline-flex' : 'none'
   } catch (e) { /* ignore */ }
 }
@@ -869,6 +953,13 @@ async function startSession() {
     if (updateTimer) clearInterval(updateTimer)
     updateTimer = setInterval(loadHistoryAndToday, TIMER_INTERVALS.historyRefresh)
 
+    if (petManager) {
+      petManager.tiredWarnShown = false
+      await petManager.setState(PET_STATES.STUDYING)
+      petManager.playAnimation('excited')
+      petManager.startEnergyDrain()
+    }
+
     showToast('▶ 已开始记录', 'success', 2200, true)
   } catch (e) {
     console.error('[startSession] 失败:', e)
@@ -892,6 +983,11 @@ async function pauseSession() {
     currentSessionPausedAt = now
     updatePauseButtonState()
     await updateTodayDuration()
+    if (petManager) {
+      await petManager.setState(PET_STATES.PAUSED)
+      petManager.playAnimation('confused')
+      petManager.startEnergyRecovery()
+    }
     showToast('已暂停记录', 'info', 1600)
   } catch (e) {
     showToast('暂停失败: ' + (e && e.message ? e.message : e), 'warning', 3000)
@@ -918,6 +1014,11 @@ async function resumeSession() {
     currentSessionPausedAt = null
     updatePauseButtonState()
     await updateTodayDuration()
+    if (petManager) {
+      await petManager.setState(PET_STATES.STUDYING)
+      petManager.playAnimation('excited')
+      petManager.startEnergyDrain()
+    }
     showToast('已继续记录', 'success', 1600)
   } catch (e) {
     showToast('继续失败: ' + (e && e.message ? e.message : e), 'warning', 3000)
@@ -953,10 +1054,22 @@ async function endSession() {
     }
     updatePauseButtonState()
 
-    await window.studyRecord.endSession({
-      id: currentSessionId,
+    const endedSessionId = currentSessionId
+    const endResult = await window.studyRecord.endSession({
+      id: endedSessionId,
       endTime: toChinaTimeString(now)
     })
+    const sessionSeconds = endResult && typeof endResult.duration === 'number' ? endResult.duration : 0
+
+    if (petManager) {
+      petManager.stopAllTimers()
+      await petManager.setState(PET_STATES.CELEBRATE)
+      const earnedExp = Math.floor(sessionSeconds / 60)
+      const didLevelUp = await petManager.addExp(earnedExp, sessionSeconds)
+      petManager.playAnimation('celebrate', { exp: earnedExp })
+      if (didLevelUp) setTimeout(() => petManager.playAnimation('levelup'), 900)
+      await petManager.checkUnlocks(true)
+    }
 
     currentSessionId = null
     currentSessionStartTime = null
@@ -966,6 +1079,11 @@ async function endSession() {
     updatePauseButtonState()
 
     await loadHistoryAndToday()
+    if (petManager && !currentSessionId) {
+      setTimeout(() => {
+        if (!currentSessionId) petManager.setState(PET_STATES.IDLE)
+      }, 3600)
+    }
     showToast('⏹ 已结束记录', 'info', 2200, true)
   } catch (e) {
     console.error('[endSession] 失败:', e)
@@ -1022,17 +1140,32 @@ async function showToast(text, type = 'info', duration = 3000, useSystemNotify =
 let activeModalCount = 0
 let confirmResolve = null
 
+function resetScrollPosition(root) {
+  if (!root) return
+  const reset = () => {
+    root.scrollTop = 0
+    root.querySelectorAll('.modal-body, .settings-body, .update-notes, #history-list, [data-reset-scroll]').forEach(el => {
+      el.scrollTop = 0
+    })
+  }
+  reset()
+  requestAnimationFrame(reset)
+  setTimeout(reset, 30)
+}
+
 function showModal(id) {
   const el = document.getElementById(id)
   if (!el) return
+  const wasHidden = el.classList.contains('hidden')
   el.classList.remove('hidden')
-  activeModalCount++
+  if (wasHidden) activeModalCount++
   document.body.classList.add('modal-open')
+  resetScrollPosition(el)
 }
 
 function hideModal(id) {
   const el = document.getElementById(id)
-  if (!el) return
+  if (!el || el.classList.contains('hidden')) return
   el.classList.add('hidden')
   activeModalCount = Math.max(0, activeModalCount - 1)
   if (activeModalCount === 0) {
@@ -1117,32 +1250,125 @@ function renderMarkdown(src) {
 }
 
 // ---------- 更新弹窗（自渲染，替代系统 dialog） ----------
+async function setUpdateInteractionState(state) {
+  try {
+    await window.studyRecord.setUpdateInteractionState?.(state)
+  } catch (e) {}
+}
+
+async function prepareForUpdateInstall(downloadingText) {
+  if (!currentSessionId) return true
+  if (downloadingText) downloadingText.textContent = '正在结束当前记录...'
+  await endSession()
+  return !currentSessionId
+}
+
+function resetUpdateModalActions() {
+  const laterBtn = document.getElementById('update-later-btn')
+  const nowBtn = document.getElementById('update-now-btn')
+  const closeBtn = document.querySelector('#update-modal .modal-close-btn')
+  updateAccepted = false
+  updateInstalling = false
+  setUpdateInteractionState(updateModalOpen ? 'prompt' : 'normal')
+  if (nowBtn) { nowBtn.disabled = false; nowBtn.textContent = '立即更新' }
+  if (laterBtn) laterBtn.disabled = false
+  if (closeBtn) closeBtn.disabled = false
+}
+
 function showUpdateModal({ version, notes }) {
   const tagEl = document.getElementById('update-version-tag')
   const bodyEl = document.getElementById('update-notes')
   if (tagEl) tagEl.textContent = `v${version}`
   if (bodyEl) bodyEl.innerHTML = renderMarkdown(notes)
+  const nowBtn = document.getElementById('update-now-btn')
+  const laterBtn = document.getElementById('update-later-btn')
+  const closeBtn = document.querySelector('#update-modal .modal-close-btn')
+  const progress = document.getElementById('update-progress')
+  const overlay = document.getElementById('update-downloading-overlay')
+  updateAccepted = false
+  updateModalOpen = true
+  updateInstalling = false
+  if (nowBtn) { nowBtn.disabled = false; nowBtn.textContent = '立即更新' }
+  if (laterBtn) laterBtn.disabled = false
+  if (closeBtn) closeBtn.disabled = false
+  if (progress) progress.classList.add('hidden')
+  if (overlay) overlay.classList.add('hidden')
+  setUpdateInteractionState('prompt')
   showModal('update-modal')
 }
 
+function hideUpdateOverlay() {
+  const overlay = document.getElementById('update-downloading-overlay')
+  if (overlay) overlay.classList.add('hidden')
+}
+
 function hideUpdateModal() {
+  if (updateInstalling) return
+  updateModalOpen = false
+  setUpdateInteractionState('normal')
   hideModal('update-modal')
 }
 
 function initUpdateModal() {
   const laterBtn = document.getElementById('update-later-btn')
   const nowBtn = document.getElementById('update-now-btn')
+  const overlay = document.getElementById('update-downloading-overlay')
   if (laterBtn) laterBtn.addEventListener('click', () => {
+    if (updateInstalling) return
+    updateAccepted = false
     hideUpdateModal()
     window.studyRecord.respondUpdatePrompt?.(false)
   })
-  if (nowBtn) nowBtn.addEventListener('click', () => {
-    hideUpdateModal()
-    window.studyRecord.respondUpdatePrompt?.(true)
+  if (nowBtn) nowBtn.addEventListener('click', async () => {
+    if (updateAccepted) return
+    updateAccepted = true
+    updateInstalling = true
+    setUpdateInteractionState('installing')
+    nowBtn.disabled = true
+    nowBtn.textContent = '准备更新...'
+    if (laterBtn) laterBtn.disabled = true
+    const closeBtn = document.querySelector('#update-modal .modal-close-btn')
+    if (closeBtn) closeBtn.disabled = true
+    // 显示遮罩，阻断所有交互
+    if (overlay) overlay.classList.remove('hidden')
+    const downloadingText = document.getElementById('update-downloading-text')
+    if (downloadingText) downloadingText.textContent = '准备更新...'
+    const progressEl = document.getElementById('update-progress')
+    try {
+      const ready = await prepareForUpdateInstall(downloadingText)
+      if (!ready) throw new Error('当前记录结束失败')
+      if (downloadingText) downloadingText.textContent = '准备下载...'
+      const result = await window.studyRecord.respondUpdatePrompt?.(true)
+      if (result && result.ok) {
+        if (progressEl) progressEl.classList.remove('hidden')
+        if (downloadingText) downloadingText.textContent = '正在下载更新...'
+        showToast('正在下载更新...', 'info', 2000)
+      } else if (result) {
+        if (result.reason === 'already-downloading') {
+          if (downloadingText) downloadingText.textContent = '正在下载更新...'
+          showToast('更新已在下载中', 'info', 2000)
+        } else {
+          hideUpdateOverlay()
+          resetUpdateModalActions()
+          showToast('启动下载失败: ' + (result.reason || '未知错误'), 'warning', 3000)
+        }
+      } else {
+        hideUpdateOverlay()
+        resetUpdateModalActions()
+        showToast('启动下载失败', 'warning', 2000)
+      }
+    } catch (e) {
+      hideUpdateOverlay()
+      resetUpdateModalActions()
+      showToast('下载失败: ' + (e && e.message ? e.message : e), 'warning', 4000)
+    }
   })
-  // 关闭 / backdrop 点击视作"稍后"
-  document.querySelectorAll('#update-modal [data-close]').forEach(el => {
+  // 关闭 / backdrop 点击：安装中拦截
+  document.querySelectorAll('#update-modal [data-update-close]').forEach(el => {
     el.addEventListener('click', () => {
+      if (updateInstalling) return
+      updateAccepted = false
+      hideUpdateModal()
       window.studyRecord.respondUpdatePrompt?.(false)
     })
   })
@@ -1205,7 +1431,43 @@ function showConfirm({ title = '确认操作', text = '', okText = '确认', can
   })
 }
 
+// ---------- 首次使用引导 ----------
+async function initOnboarding() {
+  const modal = document.getElementById('onboarding-modal')
+  const startBtn = document.getElementById('onboarding-start')
+  const dontShow = document.getElementById('onboarding-dont-show')
+  const backdrop = document.getElementById('onboarding-backdrop')
+  if (!(modal && startBtn && dontShow && backdrop)) return
+
+  const close = async () => {
+    if (dontShow.checked) {
+      try { await window.studyRecord.setConfig('onboarding_shown', '1') } catch (e) {}
+    }
+    hideModal('onboarding-modal')
+  }
+  startBtn.addEventListener('click', close)
+  backdrop.addEventListener('click', close)
+
+  try {
+    const shown = await window.studyRecord.getConfig('onboarding_shown')
+    if (!shown) showModal('onboarding-modal')
+  } catch (e) {}
+}
+
 // ---------- 时间区间弹窗 ----------
+function syncTimeRangePreset(start, end) {
+  const presets = document.querySelectorAll('input[name="time-preset"]')
+  if (!presets.length) return
+  let matched = false
+  presets.forEach(input => {
+    const isMatch = input.dataset.start === start && input.dataset.end === end
+    input.checked = isMatch
+    if (isMatch) matched = true
+  })
+  const custom = document.querySelector('input[name="time-preset"][value="custom"]')
+  if (custom) custom.checked = !matched
+}
+
 async function showTimeRangeModal() {
   const modal = document.getElementById('time-range-modal')
   const startInput = document.getElementById('time-range-start')
@@ -1218,7 +1480,19 @@ async function showTimeRangeModal() {
   const cfg = await getTimeRangeConfig()
   startInput.value = cfg.start
   endInput.value = cfg.end
+  syncTimeRangePreset(cfg.start, cfg.end)
   showModal('time-range-modal')
+
+  document.querySelectorAll('input[name="time-preset"]').forEach(input => {
+    input.onchange = () => {
+      if (!input.checked || !input.dataset.start || !input.dataset.end) return
+      startInput.value = input.dataset.start
+      endInput.value = input.dataset.end
+    }
+  })
+  const syncCustom = () => syncTimeRangePreset(startInput.value, endInput.value)
+  startInput.oninput = syncCustom
+  endInput.oninput = syncCustom
 
   const close = () => hideModal('time-range-modal')
   cancelBtn.onclick = close
@@ -1275,6 +1549,51 @@ async function showGoalModal() {
   }
 }
 
+function formatTooltipDuration(sec) {
+  if (!sec || sec < 0) return '学习 0 分钟'
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  if (h && m) return `学习 ${h} 小时 ${m} 分`
+  if (h) return `学习 ${h} 小时`
+  return `学习 ${m} 分钟`
+}
+
+function bindChartTooltip(container) {
+  const tooltip = document.getElementById('chart-tooltip')
+  if (!container || !tooltip) return
+  const dateEl = tooltip.querySelector('.tooltip-date')
+  const valueEl = tooltip.querySelector('.tooltip-value')
+
+  const move = (e) => {
+    const offset = 8
+    const rect = tooltip.getBoundingClientRect()
+    let left = e.clientX + offset
+    let top = e.clientY + offset
+    if (left + rect.width > window.innerWidth - 6) left = e.clientX - rect.width - offset
+    if (top + rect.height > window.innerHeight - 6) top = e.clientY - rect.height - offset
+    tooltip.style.left = `${Math.max(6, left)}px`
+    tooltip.style.top = `${Math.max(6, top)}px`
+  }
+
+  container.querySelectorAll('[data-tooltip-date]').forEach(el => {
+    el.onmouseenter = (e) => {
+      if (dateEl) dateEl.textContent = el.dataset.tooltipDate || ''
+      if (valueEl) valueEl.textContent = el.dataset.tooltipValue || ''
+      tooltip.classList.remove('hidden')
+      void tooltip.offsetWidth
+      tooltip.classList.add('show')
+      move(e)
+    }
+    el.onmousemove = move
+    el.onmouseleave = () => {
+      tooltip.classList.remove('show')
+      setTimeout(() => {
+        if (!tooltip.classList.contains('show')) tooltip.classList.add('hidden')
+      }, 150)
+    }
+  })
+}
+
 // ---------- 统计弹窗 ----------
 async function showStatsModal() {
   const modal = document.getElementById('stats-modal')
@@ -1286,23 +1605,29 @@ async function showStatsModal() {
     const weekData = await window.studyRecord.statsWeek()
     const chart = document.getElementById('week-chart')
     if (chart) {
-      const maxSec = Math.max(...weekData.map(d => d.seconds), 1)
-      const MAX_BAR_HEIGHT = 42  // 留出 14px 给底部 label 和 gap
-      chart.innerHTML = weekData.map(d => `
-        <div class="week-bar">
-          <div class="week-bar-value">${d.seconds > 0 ? formatHoursShort(d.seconds) : ''}</div>
-          <div class="week-bar-fill" style="height: 0px;"></div>
-          <div class="week-bar-label">${d.label}</div>
-        </div>`).join('')
+      const hasWeekRecord = weekData.some(d => d.seconds > 0)
+      if (!hasWeekRecord) {
+        chart.innerHTML = renderEmptyState('最近 7 天无记录', '开始学习后会生成每日时长柱状图。', 'stats-empty')
+      } else {
+        const maxSec = Math.max(...weekData.map(d => d.seconds), 1)
+        const MAX_BAR_HEIGHT = 42  // 留出 14px 给底部 label 和 gap
+        chart.innerHTML = weekData.map(d => `
+          <div class="week-bar" data-tooltip-date="${escapeHtml(d.date || d.label)}" data-tooltip-value="${formatTooltipDuration(d.seconds)}">
+            <div class="week-bar-value">${d.seconds > 0 ? formatHoursShort(d.seconds) : ''}</div>
+            <div class="week-bar-fill" style="height: 0px;"></div>
+            <div class="week-bar-label">${d.label}</div>
+          </div>`).join('')
 
-      // 动画展开
-      requestAnimationFrame(() => {
-        chart.querySelectorAll('.week-bar-fill').forEach((el, i) => {
-          const ratio = weekData[i].seconds / maxSec
-          const h = weekData[i].seconds > 0 ? Math.max(ratio * MAX_BAR_HEIGHT, 3) : 0
-          el.style.height = `${h}px`
+        // 动画展开
+        requestAnimationFrame(() => {
+          chart.querySelectorAll('.week-bar-fill').forEach((el, i) => {
+            const ratio = weekData[i].seconds / maxSec
+            const h = weekData[i].seconds > 0 ? Math.max(ratio * MAX_BAR_HEIGHT, 3) : 0
+            el.style.height = `${h}px`
+          })
         })
-      })
+        bindChartTooltip(chart)
+      }
     }
   } catch (e) { console.error('周数据加载失败', e) }
 
@@ -1311,14 +1636,20 @@ async function showStatsModal() {
     const heatData = await window.studyRecord.statsHeatmap(35)
     const heat = document.getElementById('heatmap')
     if (heat) {
-      const maxSec = Math.max(...heatData.map(d => d.seconds), 1)
-      heat.innerHTML = heatData.map(d => {
-        const level = d.seconds === 0 ? 0 :
-                      d.seconds / maxSec < 0.25 ? 1 :
-                      d.seconds / maxSec < 0.5 ? 2 :
-                      d.seconds / maxSec < 0.75 ? 3 : 4
-        return `<div class="heatmap-cell ${level > 0 ? 'l' + level : ''}" data-tooltip="${d.date}: ${formatHoursShort(d.seconds)}"></div>`
-      }).join('')
+      const hasHeatRecord = heatData.some(d => d.seconds > 0)
+      if (!hasHeatRecord) {
+        heat.innerHTML = renderEmptyState('暂无热力数据', '近 35 天有学习记录后会显示热力图。', 'stats-empty')
+      } else {
+        const maxSec = Math.max(...heatData.map(d => d.seconds), 1)
+        heat.innerHTML = heatData.map(d => {
+          const level = d.seconds === 0 ? 0 :
+                        d.seconds / maxSec < 0.25 ? 1 :
+                        d.seconds / maxSec < 0.5 ? 2 :
+                        d.seconds / maxSec < 0.75 ? 3 : 4
+          return `<div class="heatmap-cell ${level > 0 ? 'l' + level : ''}" data-tooltip-date="${escapeHtml(d.date)}" data-tooltip-value="${formatTooltipDuration(d.seconds)}"></div>`
+        }).join('')
+        bindChartTooltip(heat)
+      }
     }
   } catch (e) { console.error('热力图加载失败', e) }
 
@@ -1408,7 +1739,7 @@ async function renderTagList() {
   try {
     const tags = await window.studyRecord.tagGetAll()
     if (tags.length === 0) {
-      listEl.innerHTML = '<div class="tag-empty">暂无标签，添加你的第一个标签吧</div>'
+      listEl.innerHTML = renderEmptyState('暂无标签', '添加标签后，可以给学习记录分类。', 'compact-empty')
       return
     }
     listEl.innerHTML = tags.map(t => `
@@ -1438,7 +1769,7 @@ async function renderTagList() {
       }
     })
   } catch (e) {
-    listEl.innerHTML = '<div class="tag-empty" style="color:var(--danger);">加载失败</div>'
+    listEl.innerHTML = renderErrorState('标签加载失败', '请关闭后重新打开。')
   }
 }
 
@@ -1451,6 +1782,10 @@ async function showBadgeModal() {
     const badges = await window.studyRecord.badgeGetAll()
     const grid = document.getElementById('badge-grid')
     if (grid) {
+      if (!badges || badges.length === 0) {
+        grid.innerHTML = renderEmptyState('暂无徽章', '完成更多学习记录后会解锁成就。', 'compact-empty')
+        return
+      }
       grid.innerHTML = badges.map(b => `
         <div class="badge-item ${b.earned ? '' : 'locked'}" title="${escapeHtml(b.desc)}">
           <div class="badge-icon">${b.icon}</div>
@@ -1459,7 +1794,9 @@ async function showBadgeModal() {
         </div>`).join('')
     }
   } catch (e) {
-    showMessage('加载徽章失败')
+    const grid = document.getElementById('badge-grid')
+    if (grid) grid.innerHTML = renderErrorState('徽章加载失败', '请稍后重试。')
+    else showMessage('加载徽章失败')
   }
 }
 
@@ -1476,6 +1813,378 @@ function showBadgeUnlock(badge) {
     toast.classList.remove('show')
     setTimeout(() => toast.classList.add('hidden'), 400)
   }, 3500)
+}
+
+// ---------- 学习宠物 ----------
+function clampNumber(value, min, max) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return min
+  return Math.max(min, Math.min(max, n))
+}
+
+function getPetTodayKey() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function getLevelNeed(level) {
+  return 100 + (Math.max(1, level) - 1) * 50
+}
+
+function createDefaultPetRecord() {
+  return {
+    level: 1,
+    exp: 0,
+    mood: 80,
+    affection: 20,
+    energy: 100,
+    totalStudyTime: 0,
+    createdAt: new Date().toISOString(),
+    lastInteractAt: null
+  }
+}
+
+function normalizeRendererPetState(state) {
+  const base = {
+    activePetId: 'cat',
+    unlockedPets: ['cat'],
+    pets: { cat: createDefaultPetRecord() },
+    dailyStats: { date: getPetTodayKey(), interactCount: 0 },
+    enabled: true,
+    version: 1
+  }
+  const next = state && typeof state === 'object' ? state : base
+  next.activePetId = PET_META[next.activePetId] ? next.activePetId : 'cat'
+  next.unlockedPets = Array.isArray(next.unlockedPets) ? [...new Set(['cat', ...next.unlockedPets])] : ['cat']
+  next.pets = next.pets && typeof next.pets === 'object' ? next.pets : {}
+  next.unlockedPets.forEach(id => {
+    if (!next.pets[id]) next.pets[id] = createDefaultPetRecord()
+  })
+  if (!next.dailyStats || next.dailyStats.date !== getPetTodayKey()) {
+    next.dailyStats = { date: getPetTodayKey(), interactCount: 0 }
+  }
+  next.enabled = next.enabled !== false
+  next.version = 1
+  return next
+}
+
+function renderPetSvg(petId) {
+  const colors = {
+    cat: { body: 'var(--warning)', body2: 'color-mix(in srgb, var(--warning) 78%, var(--accent) 22%)', ear: 'color-mix(in srgb, var(--warning) 32%, #fff)', mark: 'color-mix(in srgb, var(--warning) 48%, #111)' },
+    dog: { body: 'var(--success)', body2: 'color-mix(in srgb, var(--success) 76%, var(--text-primary) 10%)', ear: 'color-mix(in srgb, var(--success) 42%, var(--text-primary) 12%)', mark: 'color-mix(in srgb, var(--success) 36%, #111)' },
+    owl: { body: 'var(--accent-2)', body2: 'var(--accent)', ear: 'color-mix(in srgb, var(--accent-2) 30%, #fff)', mark: 'color-mix(in srgb, var(--accent) 42%, #111)' }
+  }[petId] || { body: 'var(--accent)', body2: 'var(--accent-2)', ear: 'var(--accent-soft)', mark: 'var(--text-secondary)' }
+  const catFeatures = petId === 'cat' ? '<path d="M18 22 12 12l13 5" fill="' + colors.body + '"/><path d="M46 22 52 12l-13 5" fill="' + colors.body + '"/><path class="pet-tail" d="M48 42c10 0 10 10 2 11" fill="none" stroke="' + colors.body2 + '" stroke-width="5" stroke-linecap="round"/>' : ''
+  const dogFeatures = petId === 'dog' ? '<path d="M18 22c-7 2-8 12-2 16" fill="' + colors.ear + '"/><path d="M46 22c7 2 8 12 2 16" fill="' + colors.ear + '"/><path class="pet-tail" d="M48 44c8 2 10-4 6-8" fill="none" stroke="' + colors.body2 + '" stroke-width="5" stroke-linecap="round"/>' : ''
+  const owlFeatures = petId === 'owl' ? '<path d="M18 20 16 11l9 7" fill="' + colors.ear + '"/><path d="M46 20 48 11l-9 7" fill="' + colors.ear + '"/><path d="M24 39c4 3 12 3 16 0" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2" stroke-linecap="round"/>' : ''
+  const nose = petId === 'owl'
+    ? '<path d="M32 32l-3 5h6z" fill="#f2b84b"/>'
+    : '<path d="M32 34l-3 3h6z" fill="' + colors.mark + '"/>'
+
+  return `<svg class="pet-svg" viewBox="0 0 64 64" aria-hidden="true">
+    <ellipse cx="32" cy="52" rx="19" ry="5" fill="rgba(20,40,80,.10)"></ellipse>
+    <g class="pet-body-group">
+      ${catFeatures}${dogFeatures}${owlFeatures}
+      <ellipse cx="32" cy="39" rx="18" ry="17" fill="${colors.body2}"></ellipse>
+      <circle cx="32" cy="28" r="18" fill="${colors.body}"></circle>
+      <ellipse cx="25" cy="29" rx="7" ry="7.5" fill="rgba(255,255,255,.58)"></ellipse>
+      <ellipse cx="39" cy="29" rx="7" ry="7.5" fill="rgba(255,255,255,.58)"></ellipse>
+      <g class="pet-eyes-open">
+        <circle cx="25" cy="29" r="2.2" fill="#1a1f36"></circle>
+        <circle cx="39" cy="29" r="2.2" fill="#1a1f36"></circle>
+      </g>
+      ${nose}
+      <path d="M26 40c3.4 2.8 8.6 2.8 12 0" fill="none" stroke="${colors.mark}" stroke-width="2.2" stroke-linecap="round"></path>
+      <circle cx="20" cy="35" r="2.4" fill="rgba(255,255,255,.34)"></circle>
+      <circle cx="44" cy="35" r="2.4" fill="rgba(255,255,255,.34)"></circle>
+    </g>
+  </svg>`
+}
+
+class PetManager {
+  constructor() {
+    this.state = PET_STATES.IDLE
+    this.petState = null
+    this.energyTimer = null
+    this.hintTimer = null
+    this.tiredWarnShown = false
+  }
+
+  get activePet() {
+    if (!this.petState) return createDefaultPetRecord()
+    const id = this.petState.activePetId || 'cat'
+    if (!this.petState.pets[id]) this.petState.pets[id] = createDefaultPetRecord()
+    return this.petState.pets[id]
+  }
+
+  async init() {
+    try {
+      const state = await window.studyRecord.petGetState()
+      this.petState = normalizeRendererPetState(state)
+      this.render()
+      this.bind()
+      await this.checkUnlocks(false)
+      if (currentSessionId) {
+        await this.setState(isPaused ? PET_STATES.PAUSED : PET_STATES.STUDYING, false)
+        if (isPaused) this.startEnergyRecovery()
+        else this.startEnergyDrain()
+      }
+    } catch (e) {
+      console.error('[Pet] 初始化失败:', e)
+    }
+  }
+
+  bind() {
+    const visual = document.getElementById('pet-visual')
+    if (visual) visual.addEventListener('click', () => this.onPetClick())
+  }
+
+  async save() {
+    if (!this.petState) return
+    try { await window.studyRecord.petSaveState(this.petState) } catch (e) { console.error('[Pet] 保存失败:', e) }
+  }
+
+  async setState(newState, persist = true) {
+    this.state = newState
+    const visual = document.getElementById('pet-visual')
+    if (visual) visual.dataset.state = newState
+    if (persist) await this.save()
+  }
+
+  render() {
+    if (!this.petState) return
+    const activeId = this.petState.activePetId || 'cat'
+    const visual = document.getElementById('pet-visual')
+    if (visual) {
+      visual.innerHTML = renderPetSvg(activeId)
+      visual.dataset.state = this.state
+      visual.title = `${PET_META[activeId].name} · 点击互动`
+    }
+    this.updateStatsUI()
+    this.updateExpUI()
+  }
+
+  updateStatsUI() {
+    const pet = this.activePet
+    const level = document.getElementById('pet-level-badge')
+    const mood = document.getElementById('mood-fill')
+    const energy = document.getElementById('energy-fill')
+    const affection = document.getElementById('affection-fill')
+    if (level) level.textContent = `Lv.${pet.level || 1}`
+    if (mood) mood.style.width = `${clampNumber(pet.mood, 0, 100)}%`
+    if (energy) energy.style.width = `${clampNumber(pet.energy, 0, 100)}%`
+    if (affection) affection.style.width = `${clampNumber(pet.affection, 0, 100)}%`
+  }
+
+  updateExpUI() {
+    const pet = this.activePet
+    const need = getLevelNeed(pet.level || 1)
+    const fill = document.getElementById('pet-exp-fill')
+    if (fill) fill.style.width = `${clampNumber((pet.exp || 0) / need * 100, 0, 100)}%`
+  }
+
+  playAnimation(type, params = {}) {
+    const visual = document.getElementById('pet-visual')
+    if (!visual) return
+    if (type === 'celebrate') {
+      visual.classList.remove('is-celebrating')
+      void visual.offsetWidth
+      visual.classList.add('is-celebrating')
+      this.spawnParticles(['✦', '•', '+'], 10)
+      if (params.exp) this.spawnExpPop(`+${params.exp} EXP`)
+      setTimeout(() => visual.classList.remove('is-celebrating'), 900)
+    } else if (type === 'levelup') {
+      visual.classList.remove('is-level-up')
+      void visual.offsetWidth
+      visual.classList.add('is-level-up')
+      this.spawnParticles(['Lv', '✦', '↑'], 12)
+      this.showSpeechBubble('升级了！')
+      setTimeout(() => visual.classList.remove('is-level-up'), 1700)
+    } else if (type === 'interact') {
+      this.spawnParticles(['♥', '♡'], 6)
+    } else if (type === 'excited') {
+      this.showSpeechBubble('一起专注')
+    } else if (type === 'confused') {
+      this.showSpeechBubble('休息一下')
+    }
+  }
+
+  spawnParticles(symbols, count = 8) {
+    const visual = document.getElementById('pet-visual')
+    if (!visual) return
+    const rect = visual.getBoundingClientRect()
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement('div')
+      el.className = 'pet-particle'
+      el.textContent = symbols[i % symbols.length]
+      el.style.left = `${rect.left + rect.width / 2 + (Math.random() - 0.5) * 36}px`
+      el.style.top = `${rect.top + rect.height / 2 + (Math.random() - 0.5) * 18}px`
+      el.style.setProperty('--pet-drift', `${(Math.random() - 0.5) * 62}px`)
+      document.body.appendChild(el)
+      setTimeout(() => el.remove(), 1500)
+    }
+  }
+
+  spawnExpPop(text) {
+    const visual = document.getElementById('pet-visual')
+    if (!visual) return
+    const rect = visual.getBoundingClientRect()
+    const el = document.createElement('div')
+    el.className = 'pet-exp-pop'
+    el.textContent = text
+    el.style.left = `${rect.left + rect.width / 2}px`
+    el.style.top = `${rect.top + 4}px`
+    document.body.appendChild(el)
+    setTimeout(() => el.remove(), 1300)
+  }
+
+  startEnergyDrain() {
+    this.stopAllTimers()
+    this.energyTimer = setInterval(() => {
+      const pet = this.activePet
+      pet.energy = clampNumber((pet.energy || 100) - 1 / 60, 0, 100)
+      pet.mood = clampNumber((pet.mood || 80) + 1 / 60, 0, 100)
+      this.updateStatsUI()
+    }, TIMER_INTERVALS.todayUpdate)
+  }
+
+  startEnergyRecovery() {
+    this.stopAllTimers()
+    this.energyTimer = setInterval(() => {
+      const pet = this.activePet
+      pet.energy = clampNumber((pet.energy || 100) + 2 / 60, 0, 100)
+      pet.mood = clampNumber((pet.mood || 80) - 0.5 / 60, 0, 100)
+      this.updateStatsUI()
+    }, TIMER_INTERVALS.todayUpdate)
+  }
+
+  stopAllTimers() {
+    if (this.energyTimer) clearInterval(this.energyTimer)
+    this.energyTimer = null
+    this.save()
+  }
+
+  async addExp(amount, seconds = 0) {
+    if (!this.petState || amount <= 0) return false
+    const pet = this.activePet
+    pet.exp = (pet.exp || 0) + amount
+    pet.totalStudyTime = (pet.totalStudyTime || 0) + Math.max(0, seconds)
+    pet.mood = clampNumber((pet.mood || 80) + Math.min(12, amount / 8), 0, 100)
+    pet.energy = clampNumber(pet.energy || 100, 0, 100)
+
+    let didLevelUp = false
+    while ((pet.exp || 0) >= getLevelNeed(pet.level || 1) && (pet.level || 1) < 100) {
+      pet.exp -= getLevelNeed(pet.level || 1)
+      pet.level = (pet.level || 1) + 1
+      didLevelUp = true
+    }
+    this.updateStatsUI()
+    this.updateExpUI()
+    await this.save()
+    if (didLevelUp) showToast(`宠物升级到 Lv.${pet.level}`, 'success', 2600)
+    return didLevelUp
+  }
+
+  async onPetClick() {
+    if (!this.petState) return
+    const stats = this.petState.dailyStats || { date: getPetTodayKey(), interactCount: 0 }
+    if (stats.date !== getPetTodayKey()) {
+      stats.date = getPetTodayKey()
+      stats.interactCount = 0
+    }
+    if (stats.interactCount >= 20) {
+      this.showSpeechBubble('今天已经很亲密啦')
+      return
+    }
+    stats.interactCount += 1
+    this.petState.dailyStats = stats
+    const pet = this.activePet
+    pet.affection = clampNumber((pet.affection || 0) + 1, 0, 100)
+    pet.mood = clampNumber((pet.mood || 80) + 0.5, 0, 100)
+    pet.lastInteractAt = new Date().toISOString()
+    this.updateStatsUI()
+    this.playAnimation('interact')
+    this.showSpeechBubble(['继续保持', '专注很棒', '我在陪你'][stats.interactCount % 3])
+    await this.save()
+  }
+
+  showSpeechBubble(text, duration = 2200) {
+    const hint = document.getElementById('pet-status-hint')
+    if (!hint) return
+    hint.textContent = text
+    hint.classList.remove('hidden')
+    if (this.hintTimer) clearTimeout(this.hintTimer)
+    this.hintTimer = setTimeout(() => hint.classList.add('hidden'), duration)
+  }
+
+  async showTiredWarning() {
+    if (this.tiredWarnShown) return
+    this.tiredWarnShown = true
+    await this.setState(PET_STATES.TIRED)
+    this.showSpeechBubble('休息一会吧')
+    showToast('宠物提醒：已经学习很久了，休息一下更高效。', 'info', 4200)
+  }
+
+  async checkUnlocks(showNotice = true) {
+    if (!this.petState) return
+    try {
+      const result = await window.studyRecord.petCheckUnlocks()
+      const unlockable = Array.isArray(result?.unlockable) ? result.unlockable : ['cat']
+      const fresh = unlockable.filter(id => PET_META[id] && !this.petState.unlockedPets.includes(id))
+      if (!fresh.length) return
+      fresh.forEach(id => {
+        this.petState.unlockedPets.push(id)
+        if (!this.petState.pets[id]) this.petState.pets[id] = createDefaultPetRecord()
+      })
+      await this.save()
+      if (showNotice) fresh.forEach(id => showToast(`已解锁 ${PET_META[id].name}`, 'success', 3000))
+    } catch (e) {
+      console.error('[Pet] 解锁检查失败:', e)
+    }
+  }
+
+  async switchPet(id) {
+    if (!this.petState || !this.petState.unlockedPets.includes(id)) return
+    this.petState.activePetId = id
+    if (!this.petState.pets[id]) this.petState.pets[id] = createDefaultPetRecord()
+    this.render()
+    this.showSpeechBubble(`${PET_META[id].name} 出场`)
+    await this.save()
+  }
+
+  async renderCollection() {
+    await this.checkUnlocks(false)
+    const root = document.getElementById('pet-collection')
+    const meta = document.getElementById('pet-modal-meta')
+    if (!root || !this.petState) return
+    const unlockedCount = Object.keys(PET_META).filter(id => this.petState.unlockedPets.includes(id)).length
+    if (meta) meta.textContent = `${unlockedCount}/${Object.keys(PET_META).length} 已解锁`
+    root.innerHTML = Object.values(PET_META).map(pet => {
+      const unlocked = this.petState.unlockedPets.includes(pet.id)
+      const active = this.petState.activePetId === pet.id
+      const record = this.petState.pets[pet.id] || createDefaultPetRecord()
+      return `<button class="pet-card ${active ? 'active' : ''} ${unlocked ? '' : 'locked'}" data-pet-id="${pet.id}" ${unlocked ? '' : 'disabled'}>
+        <div class="pet-card-visual">${renderPetSvg(pet.id)}</div>
+        <div class="pet-card-name">${escapeHtml(pet.name)}</div>
+        <div class="pet-card-desc">${unlocked ? `Lv.${record.level || 1} · ${record.affection || 0} 亲密` : escapeHtml(pet.unlockHint)}</div>
+        <div class="pet-card-status">${active ? '当前伙伴' : unlocked ? '切换' : '未解锁'}</div>
+      </button>`
+    }).join('')
+    root.querySelectorAll('.pet-card:not(.locked)').forEach(card => {
+      card.addEventListener('click', async () => {
+        await this.switchPet(card.dataset.petId)
+        await this.renderCollection()
+      })
+    })
+  }
+}
+
+petManager = new PetManager()
+window.petManager = petManager
+
+async function showPetModal() {
+  showModal('pet-modal')
+  await petManager.renderCollection()
 }
 
 // ---------- 导出弹窗 ----------
@@ -1548,7 +2257,7 @@ async function renderQuoteList() {
     const quotes = await window.studyRecord.quoteGetAll()
     if (countEl) countEl.textContent = `${quotes?.length || 0} 条`
     if (!quotes || quotes.length === 0) {
-      listEl.innerHTML = '<div class="quote-empty">还没有寄语，添加第一句吧</div>'
+      listEl.innerHTML = renderEmptyState('暂无寄语', '添加一句鼓励自己的话，会显示在主页。', 'compact-empty')
       return
     }
     listEl.innerHTML = quotes.map(q => `
@@ -1574,7 +2283,7 @@ async function renderQuoteList() {
       }
     })
   } catch (e) {
-    listEl.innerHTML = '<div class="quote-empty" style="color:var(--danger);">加载失败</div>'
+    listEl.innerHTML = renderErrorState('寄语加载失败', '请关闭后重新打开。')
   }
 }
 
@@ -1621,6 +2330,7 @@ function initRightMenuEvent() {
     if (show) {
       settingsPanel.classList.remove('hidden')
       studyPanel.classList.add('hidden')
+      resetScrollPosition(settingsPanel)
     } else {
       settingsPanel.classList.add('hidden')
       studyPanel.classList.remove('hidden')
@@ -1687,6 +2397,10 @@ async function loadHistoryListForModal() {
     const historyListEl = document.getElementById('history-list')
     if (!historyListEl) return
     historyListEl.innerHTML = ''
+    if (!list.length) {
+      historyListEl.innerHTML = `<li class="history-empty-item">${renderEmptyState('暂无学习记录', '完成一次学习后，这里会按时间线展示。', 'history-empty')}</li>`
+      return
+    }
     list.forEach((item) => {
       historyListEl.appendChild(renderHistoryItem(item))
     })
@@ -1706,9 +2420,16 @@ function initCloseHandlers() {
   })
 }
 
+function isUpdateShortcutBlocked(action) {
+  if (!updateModalOpen && !updateInstalling) return false
+  if (action === 'end-and-quit') return updateInstalling
+  return true
+}
+
 // ---------- 全局快捷键事件 ----------
 function bindGlobalShortcuts() {
   window.studyRecord.onGlobalShortcut(async (action) => {
+    if (isUpdateShortcutBlocked(action)) return
     if (action === 'start') {
       const btn = document.getElementById('start-btn')
       if (btn && !btn.disabled) startSession()
@@ -1781,11 +2502,28 @@ function initTitlebar() {
   }
 
   if (window.studyRecord.onUpdaterStatus) {
-    window.studyRecord.onUpdaterStatus(({ state, manual, version, message }) => {
+    window.studyRecord.onUpdaterStatus(({ state, manual, version, message, percent }) => {
       // 任何渠道发现新版本（自动 / 手动）都点亮按钮
       if (state === 'available' && updateBtn) {
         updateBtn.classList.add('has-update')
         updateBtn.title = `发现新版本 ${version || ''}，点击查看`
+      }
+      // 下载进度：更新弹窗内进度条
+      if (state === 'downloading') {
+        const progressBar = document.getElementById('update-progress-bar')
+        const progressText = document.getElementById('update-progress-text')
+        const downloadingText = document.getElementById('update-downloading-text')
+        const pct = Math.round(percent || 0)
+        if (progressBar) progressBar.style.setProperty('--dl-progress', `${pct}%`)
+        if (progressText) progressText.textContent = `${pct}%`
+        if (downloadingText) downloadingText.textContent = `正在下载更新 ${pct}%...`
+      }
+      // 下载完成：弹窗内提示，保持遮罩直到安装流程接管
+      if (state === 'downloaded') {
+        const downloadingText = document.getElementById('update-downloading-text')
+        const nowBtn = document.getElementById('update-now-btn')
+        if (downloadingText) downloadingText.textContent = '下载完成，正在安装...'
+        if (nowBtn) nowBtn.textContent = '即将安装...'
       }
       if (!manual) return  // 自动检查全部静默 toast，按钮高亮已经够强
       if (state === 'not-available') {
@@ -1861,6 +2599,9 @@ function bindMainButtons() {
   const badgesBtn = document.getElementById('open-badges')
   if (badgesBtn) badgesBtn.addEventListener('click', showBadgeModal)
 
+  const petsBtn = document.getElementById('open-pets')
+  if (petsBtn) petsBtn.addEventListener('click', showPetModal)
+
   const exportBtn = document.getElementById('open-export')
   if (exportBtn) exportBtn.addEventListener('click', showExportModal)
 
@@ -1872,6 +2613,7 @@ function bindMainButtons() {
 window.addEventListener('beforeunload', () => {
   if (todayTimeUpdateTimer) clearInterval(todayTimeUpdateTimer)
   if (updateTimer) clearInterval(updateTimer)
+  if (petManager) petManager.stopAllTimers()
 })
 
 // ---------- DOMContentLoaded ----------
@@ -1885,6 +2627,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initCloseHandlers()
   bindGlobalShortcuts()
   attachHistoryTagHandlers()
+  await initOnboarding()
 
   // 注入版本号到标题栏
   try {
@@ -1895,6 +2638,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // 加载初始数据
   await loadHistoryAndToday()
+  await petManager.init()
   getAndSetWord()
 
   // 点击内嵌寄语即可换一条

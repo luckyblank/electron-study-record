@@ -1,6 +1,6 @@
 {
   "name": "study-time-record",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "用于统计每日学习时长的应用",
   "main": "main.js",
   "scripts": {
@@ -16,6 +16,12 @@
   "license": "MIT",
   "build": {
     "appId": "com.luckyblank.studytimer",
+    "files": [
+      "**/*",
+      "!plan/**",
+      "!release-notes/**",
+      "!outer/*.dev.db"
+    ],
     "win": {
       "icon": "./logo.ico",
       "target": [
@@ -38,7 +44,7 @@
     "publish": [
       {
         "provider": "generic", 
-        "url": "http://www.luckyblank.cn/study-time-record/updates/"
+        "url": "https://qny.luckyblank.cn/study-time-record/updates/"
       }
     ],
     "releaseInfo": {

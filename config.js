@@ -20,8 +20,8 @@ const CONFIG = {
     notificationThreshold: 2 * 60 * 60,    // 2小时（秒）
     safeQuitTimeout: 2000,                 // 安全退出最大等待时间
     window: {
-      normal: { width: 420, height: 200 },
-      maxHeight: 500
+      normal: { width: 420, height: 248 },
+      maxHeight: 560
     }
   },
 

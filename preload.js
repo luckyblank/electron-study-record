@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('studyRecord', {
     withTimeout(ipcRenderer.invoke('study:set-config', key, value), 3000, 'setConfig'),
   getAllConfig: () =>
     withTimeout(ipcRenderer.invoke('study:get-all-config'), 3000, 'getAllConfig'),
+  getCurrentStreak: () =>
+    withTimeout(ipcRenderer.invoke('study:get-current-streak'), 3000, 'getCurrentStreak'),
 
   // ===== 标签 =====
   tagGetAll: () =>
@@ -77,6 +79,14 @@ contextBridge.exposeInMainWorld('studyRecord', {
   badgeGetAll: () =>
     withTimeout(ipcRenderer.invoke('badge:get-all'), 3000, 'badgeGetAll'),
 
+  // ===== 学习宠物 =====
+  petGetState: () =>
+    withTimeout(ipcRenderer.invoke('pet:get-state'), 3000, 'petGetState'),
+  petSaveState: (state) =>
+    withTimeout(ipcRenderer.invoke('pet:save-state', state), 3000, 'petSaveState'),
+  petCheckUnlocks: () =>
+    withTimeout(ipcRenderer.invoke('pet:check-unlocks'), 3000, 'petCheckUnlocks'),
+
   // ===== 数据导出 =====
   exportData: (format) =>
     withTimeout(ipcRenderer.invoke('data:export', format), 30000, 'exportData'),
@@ -105,7 +115,9 @@ contextBridge.exposeInMainWorld('studyRecord', {
   showUpdatePrompt: () =>
     withTimeout(ipcRenderer.invoke('updater:show-prompt'), 5000, 'showUpdatePrompt'),
   respondUpdatePrompt: (accepted) =>
-    ipcRenderer.send('updater:prompt-response', !!accepted),
+    accepted ? withTimeout(ipcRenderer.invoke('updater:start-download'), 30000, 'startDownload') : Promise.resolve(false),
+  setUpdateInteractionState: (state) =>
+    withTimeout(ipcRenderer.invoke('updater:set-interaction-state', state), 3000, 'setUpdateInteractionState'),
   onUpdaterStatus: (callback) =>
     ipcRenderer.on('updater:status', (_event, payload) => callback(payload)),
   onUpdatePromptRequested: (callback) =>

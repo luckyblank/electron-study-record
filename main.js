@@ -50,6 +50,7 @@ let appTray = null
 let words = []
 let isQuiting = false
 let pendingQuitResolve = null
+let updateInteractionState = 'normal'
 
 // 把 study_sessions 表里的时间字符串解析为 Date（中国时间语义）。
 // 新格式: "YYYY-MM-DD HH:mm:ss"，旧格式带 T 和 +08:00 / Z / 无后缀 也兼容。
@@ -218,8 +219,17 @@ function createWindow() {
   mainWindow = win
 }
 
+function isUpdateInteractionLocked() {
+  return updateInteractionState === 'prompt' || updateInteractionState === 'installing'
+}
+
+function isUpdateInstalling() {
+  return updateInteractionState === 'installing'
+}
+
 // =============== 安全退出（确认机制） ===============
 function safeQuit(win) {
+  if (isUpdateInstalling()) return
   if (!win || win.isDestroyed()) {
     app.quit()
     return
@@ -272,15 +282,25 @@ function createTray(win) {
 async function updateTrayMenu(win) {
   if (!appTray) return
   let todayDurationText = ''
+  let sessionStateText = ''
   try {
     const todayInfo = await getTodayStats()
     todayDurationText = `📊 今日: ${formatDurationSimple(todayInfo.totalSeconds)}`
   } catch (e) {
     todayDurationText = '📊 今日学习'
   }
+  try {
+    const active = await getOne(
+      `SELECT paused_at FROM study_sessions WHERE end_time IS NULL ORDER BY id DESC LIMIT 1`
+    )
+    if (active) sessionStateText = active.paused_at ? '当前记录：[暂停中]' : '当前记录：进行中'
+  } catch (e) {}
 
-  const contextMenu = Menu.buildFromTemplate([
-    { label: todayDurationText, enabled: false },
+  const template = [
+    { label: todayDurationText, enabled: false }
+  ]
+  if (sessionStateText) template.push({ label: sessionStateText, enabled: false })
+  template.push(
     { type: 'separator' },
     {
       label: '显示主窗口',
@@ -290,7 +310,9 @@ async function updateTrayMenu(win) {
       label: '退出',
       click: () => safeQuit(win)
     }
-  ])
+  )
+
+  const contextMenu = Menu.buildFromTemplate(template)
   appTray.setContextMenu(contextMenu)
 }
 
@@ -304,15 +326,19 @@ function formatDurationSimple(sec) {
 
 // =============== 全局快捷键 ===============
 function registerGlobalShortcuts(win) {
+  const sendIfUpdateUnlocked = (action) => {
+    if (isUpdateInteractionLocked()) return
+    win.webContents.send('global-shortcut', action)
+  }
   const map = [
-    [CONFIG.shortcuts.start, () => win.webContents.send('global-shortcut', 'start')],
-    [CONFIG.shortcuts.end, () => win.webContents.send('global-shortcut', 'end')],
+    [CONFIG.shortcuts.start, () => sendIfUpdateUnlocked('start')],
+    [CONFIG.shortcuts.end, () => sendIfUpdateUnlocked('end')],
     [CONFIG.shortcuts.quit, () => safeQuit(win)],
-    [CONFIG.shortcuts.pause, () => win.webContents.send('global-shortcut', 'togglePause')],
-    [CONFIG.shortcuts.closeWindow, () => win.close()],
-    [CONFIG.shortcuts.showWindow, () => win.show()],
-    [CONFIG.shortcuts.toggleMiniMode, () => win.webContents.send('global-shortcut', 'toggleMiniMode')],
-    [CONFIG.shortcuts.toggleTheme, () => win.webContents.send('global-shortcut', 'toggleTheme')]
+    [CONFIG.shortcuts.pause, () => sendIfUpdateUnlocked('togglePause')],
+    [CONFIG.shortcuts.closeWindow, () => { if (!isUpdateInteractionLocked()) win.close() }],
+    [CONFIG.shortcuts.showWindow, () => { if (!isUpdateInteractionLocked()) win.show() }],
+    [CONFIG.shortcuts.toggleMiniMode, () => sendIfUpdateUnlocked('toggleMiniMode')],
+    [CONFIG.shortcuts.toggleTheme, () => sendIfUpdateUnlocked('toggleTheme')]
   ]
 
   for (const [key, handler] of map) {
@@ -401,6 +427,12 @@ ipcMain.handle('window:close', async (event) => {
   return true
 })
 
+ipcMain.handle('updater:set-interaction-state', async (_event, state) => {
+  if (!['normal', 'prompt', 'installing'].includes(state)) return false
+  updateInteractionState = state
+  return true
+})
+
 // =============== 辅助：统计区间核心算法 ===============
 /**
  * 根据 timeRange 配置，返回 now 所在"统计日"的起止时间
@@ -461,21 +493,167 @@ async function getTimeRange() {
   return CONFIG.defaults.statTimeRange
 }
 
+function formatLocalDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function parseDateKey(day) {
+  return parseDbTime(`${day} 00:00:00`)
+}
+
+function getStatDayKey(date, timeRange) {
+  const bounds = computeRangeBounds(date, timeRange)
+  return formatLocalDateKey(bounds.start)
+}
+
+function getNextRangeBounds(bounds) {
+  const nextStart = new Date(bounds.start)
+  nextStart.setDate(nextStart.getDate() + 1)
+  const nextEnd = new Date(bounds.end)
+  nextEnd.setDate(nextEnd.getDate() + 1)
+  return { start: nextStart, end: nextEnd }
+}
+
+function getSessionTotalSeconds(row) {
+  const start = parseDbTime(row.start_time)
+  const end = parseDbTime(row.end_time)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return 0
+  const pausedDuration = Math.max(0, parseInt(row.paused_duration, 10) || 0)
+  return Math.max(0, Math.floor((end - start) / 1000) - pausedDuration)
+}
+
+function getSessionSecondsInBounds(row, bounds) {
+  const start = parseDbTime(row.start_time)
+  const end = parseDbTime(row.end_time)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return 0
+
+  const overlapStart = start > bounds.start ? start : bounds.start
+  const overlapEnd = end < bounds.end ? end : bounds.end
+  if (overlapEnd <= overlapStart) return 0
+
+  const rawSeconds = Math.floor((end - start) / 1000)
+  const totalSeconds = getSessionTotalSeconds(row)
+  if (rawSeconds <= 0 || totalSeconds <= 0) return 0
+
+  const overlapSeconds = Math.floor((overlapEnd - overlapStart) / 1000)
+  if (overlapSeconds >= rawSeconds) return totalSeconds
+  return Math.min(totalSeconds, Math.floor(overlapSeconds * totalSeconds / rawSeconds))
+}
+
+async function getEndedSessionRows() {
+  return getAll(
+    `SELECT start_time, end_time, COALESCE(paused_duration, 0) AS paused_duration
+     FROM study_sessions
+     WHERE end_time IS NOT NULL`
+  )
+}
+
+function calculateMaxStreakFromDays(days) {
+  let maxStreak = 0
+  let currentStreak = 0
+  let lastDay = null
+  const ONE_DAY = 24 * 60 * 60 * 1000
+  for (const day of days) {
+    if (!day) continue
+    const d = parseDateKey(day)
+    if (!lastDay) {
+      currentStreak = 1
+    } else {
+      const diffDays = Math.round((d - lastDay) / ONE_DAY)
+      if (diffDays === 1) currentStreak += 1
+      else if (diffDays > 1) currentStreak = 1
+    }
+    if (currentStreak > maxStreak) maxStreak = currentStreak
+    lastDay = d
+  }
+  return maxStreak
+}
+
+async function getStudyStatDays() {
+  const timeRange = await getTimeRange()
+  const rows = await getEndedSessionRows()
+  const days = new Set()
+
+  rows.forEach(row => {
+    const start = parseDbTime(row.start_time)
+    const end = parseDbTime(row.end_time)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return
+
+    let bounds = computeRangeBounds(start, timeRange)
+    let guard = 0
+    while (bounds.start < end && guard < 5000) {
+      if (getSessionSecondsInBounds(row, bounds) > 0) {
+        days.add(formatLocalDateKey(bounds.start))
+      }
+      bounds = getNextRangeBounds(bounds)
+      guard += 1
+    }
+  })
+
+  return [...days].sort()
+}
+
+async function hasStatDayAtLeastSeconds(targetSeconds) {
+  const timeRange = await getTimeRange()
+  const rows = await getEndedSessionRows()
+  const totals = new Map()
+
+  rows.forEach(row => {
+    const start = parseDbTime(row.start_time)
+    const end = parseDbTime(row.end_time)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return
+
+    let bounds = computeRangeBounds(start, timeRange)
+    let guard = 0
+    while (bounds.start < end && guard < 5000) {
+      const seconds = getSessionSecondsInBounds(row, bounds)
+      if (seconds > 0) {
+        const key = formatLocalDateKey(bounds.start)
+        totals.set(key, (totals.get(key) || 0) + seconds)
+      }
+      bounds = getNextRangeBounds(bounds)
+      guard += 1
+    }
+  })
+
+  return [...totals.values()].some(seconds => seconds >= targetSeconds)
+}
+
+async function getCurrentStreak() {
+  const statDays = await getStudyStatDays()
+  if (!statDays.length) return 0
+  const timeRange = await getTimeRange()
+  const todayKey = getStatDayKey(new Date(), timeRange)
+  const yesterday = parseDateKey(todayKey)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yesterdayKey = formatLocalDateKey(yesterday)
+  const lastStudyDay = statDays[statDays.length - 1]
+  if (lastStudyDay !== todayKey && lastStudyDay !== yesterdayKey) return 0
+
+  let streak = 1
+  for (let i = statDays.length - 2; i >= 0; i--) {
+    const next = parseDateKey(statDays[i + 1])
+    const current = parseDateKey(statDays[i])
+    const diffDays = Math.round((next - current) / (24 * 60 * 60 * 1000))
+    if (diffDays !== 1) break
+    streak += 1
+  }
+  return streak
+}
+
 // =============== 辅助：今日统计 ===============
 async function getTodayStats() {
   const timeRange = await getTimeRange()
   const now = new Date()
   const bounds = computeRangeBounds(now, timeRange)
 
-  const rows = await getAll(
-    `SELECT start_time, duration FROM study_sessions WHERE end_time IS NOT NULL`
-  )
+  const rows = await getEndedSessionRows()
   let totalSeconds = 0
   let sessionCount = 0
   rows.forEach(r => {
-    const st = parseDbTime(r.start_time)
-    if (st >= bounds.start && st < bounds.end) {
-      totalSeconds += r.duration || 0
+    const seconds = getSessionSecondsInBounds(r, bounds)
+    if (seconds > 0) {
+      totalSeconds += seconds
       sessionCount += 1
     }
   })
@@ -508,6 +686,7 @@ ipcMain.handle('study:pause-session', async (event, { id, pausedAt }) => {
     'UPDATE study_sessions SET paused_at = ? WHERE id = ?',
     [pausedAt, id]
   )
+  if (appTray && mainWindow) updateTrayMenu(mainWindow)
   return { success: true, pausedAt }
 })
 
@@ -529,6 +708,7 @@ ipcMain.handle('study:resume-session', async (event, { id, resumedAt }) => {
     'UPDATE study_sessions SET paused_at = NULL, paused_duration = ? WHERE id = ?',
     [pausedDuration, id]
   )
+  if (appTray && mainWindow) updateTrayMenu(mainWindow)
   return { success: true, pausedDuration }
 })
 
@@ -581,6 +761,10 @@ ipcMain.handle('study:get-all-sessions', async () => {
 
 ipcMain.handle('study:delete-session', async (event, { id }) => {
   const result = await runSql('DELETE FROM study_sessions WHERE id = ?', [id])
+  if (result.changes > 0) {
+    await syncEarnedBadgesCache()
+    if (appTray && mainWindow) updateTrayMenu(mainWindow)
+  }
   return {
     success: result.changes > 0,
     affectedRows: result.changes,
@@ -595,6 +779,10 @@ ipcMain.handle('study:update-note', async (event, { id, note }) => {
     [text, id]
   )
   return { success: result.changes > 0, note: text }
+})
+
+ipcMain.handle('study:get-current-streak', async () => {
+  return getCurrentStreak()
 })
 
 // =============== IPC: 词条 ===============
@@ -698,19 +886,14 @@ ipcMain.handle('stats:week', async () => {
   const timeRange = await getTimeRange()
   const now = new Date()
   // 一次性查询所有数据（避免循环 7 次 SQL）
-  const allRows = await getAll(
-    `SELECT start_time, duration FROM study_sessions WHERE end_time IS NOT NULL`
-  )
+  const allRows = await getEndedSessionRows()
 
   const result = []
   for (let i = 6; i >= 0; i--) {
     const bounds = computeRangeBoundsForOffset(now, timeRange, -i)
     let secs = 0
     allRows.forEach(r => {
-      const st = parseDbTime(r.start_time)
-      if (st >= bounds.start && st < bounds.end) {
-        secs += r.duration || 0
-      }
+      secs += getSessionSecondsInBounds(r, bounds)
     })
 
     // bounds.start 是统计日是期，格式化为展示标签
@@ -727,19 +910,14 @@ ipcMain.handle('stats:week', async () => {
 ipcMain.handle('stats:heatmap', async (event, days = 35) => {
   const timeRange = await getTimeRange()
   const now = new Date()
-  const allRows = await getAll(
-    `SELECT start_time, duration FROM study_sessions WHERE end_time IS NOT NULL`
-  )
+  const allRows = await getEndedSessionRows()
 
   const result = []
   for (let i = days - 1; i >= 0; i--) {
     const bounds = computeRangeBoundsForOffset(now, timeRange, -i)
     let secs = 0
     allRows.forEach(r => {
-      const st = parseDbTime(r.start_time)
-      if (st >= bounds.start && st < bounds.end) {
-        secs += r.duration || 0
-      }
+      secs += getSessionSecondsInBounds(r, bounds)
     })
     const d = bounds.start
     result.push({
@@ -766,42 +944,12 @@ ipcMain.handle('stats:today-boundaries', async () => {
 // 实时从 study_sessions 表聚合「累计时长 / 总记录数 / 最长连续天数」——
 // 比 user_config KV 缓存更可靠（中途删过/改过数据也能正确反映）
 ipcMain.handle('stats:overview', async () => {
-  // 总记录数 + 累计时长（只统计已结束的 session）
-  const sumRow = await getOne(
-    `SELECT
-       COUNT(*) AS total_sessions,
-       COALESCE(SUM(duration), 0) AS total_seconds
-     FROM study_sessions
-     WHERE end_time IS NOT NULL`
-  )
-  const totalSessions = sumRow ? sumRow.total_sessions : 0
-  const totalSeconds = sumRow ? sumRow.total_seconds : 0
+  const rows = await getEndedSessionRows()
+  const totalSessions = rows.length
+  const totalSeconds = rows.reduce((sum, row) => sum + getSessionTotalSeconds(row), 0)
 
-  // 最长连续学习天数：取出去重后的"学习日期"列表，按相邻日期差 = 1 累计
-  const dateRows = await getAll(
-    `SELECT DISTINCT substr(start_time, 1, 10) AS day
-     FROM study_sessions
-     WHERE end_time IS NOT NULL
-     ORDER BY day ASC`
-  )
-  let maxStreak = 0
-  let currentStreak = 0
-  let lastDay = null
-  const ONE_DAY = 24 * 60 * 60 * 1000
-  for (const r of dateRows) {
-    if (!r.day) continue
-    const d = parseDbTime(`${r.day} 00:00:00`)
-    if (!lastDay) {
-      currentStreak = 1
-    } else {
-      const diffDays = Math.round((d - lastDay) / ONE_DAY)
-      if (diffDays === 1) currentStreak += 1
-      else if (diffDays > 1) currentStreak = 1
-      // diffDays === 0 重复日（理论上 DISTINCT 已经去重），不计
-    }
-    if (currentStreak > maxStreak) maxStreak = currentStreak
-    lastDay = d
-  }
+  const statDays = await getStudyStatDays()
+  const maxStreak = calculateMaxStreakFromDays(statDays)
 
   return { totalSessions, totalSeconds, maxStreak }
 })
@@ -829,20 +977,21 @@ async function updateAccumulatedStats(addedSeconds) {
 
 async function updateStreak(endTime) {
   try {
-    const today = endTime || new Date()
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    const timeRange = await getTimeRange()
+    const todayKey = getStatDayKey(endTime || new Date(), timeRange)
 
     const lastRow = await getOne(`SELECT value FROM user_config WHERE key = 'last_study_date'`)
     const lastDate = lastRow ? lastRow.value : ''
 
-    if (lastDate === todayKey) return  // 今天已计过
+    if (lastDate === todayKey) return  // 当前统计日已计过
 
     const streakRow = await getOne(`SELECT value FROM user_config WHERE key = 'current_streak'`)
     let currentStreak = streakRow ? parseInt(streakRow.value, 10) || 0 : 0
 
     if (lastDate) {
-      const lastD = new Date(lastDate)
-      const diffDays = Math.floor((today - lastD) / (24 * 60 * 60 * 1000))
+      const lastD = parseDateKey(lastDate)
+      const todayD = parseDateKey(todayKey)
+      const diffDays = Math.round((todayD - lastD) / (24 * 60 * 60 * 1000))
       if (diffDays === 1) {
         currentStreak += 1
       } else if (diffDays > 1) {
@@ -875,48 +1024,47 @@ const BADGE_DEFINITIONS = [
     id: 'first_session', name: '初学乍练', icon: '🌱',
     desc: '完成第一次学习记录',
     check: async () => {
-      const r = await getOne(`SELECT value FROM user_config WHERE key = 'total_sessions'`)
-      return r && parseInt(r.value, 10) >= 1
+      const row = await getOne(`SELECT COUNT(*) AS count FROM study_sessions WHERE end_time IS NOT NULL`)
+      return row && row.count >= 1
     }
   },
   {
     id: 'streak_7', name: '一周坚持', icon: '🔥',
     desc: '连续学习 7 天',
     check: async () => {
-      const r = await getOne(`SELECT value FROM user_config WHERE key = 'current_streak'`)
-      return r && parseInt(r.value, 10) >= 7
+      const statDays = await getStudyStatDays()
+      return calculateMaxStreakFromDays(statDays) >= 7
     }
   },
   {
     id: 'streak_30', name: '月度大师', icon: '👑',
     desc: '连续学习 30 天',
     check: async () => {
-      const r = await getOne(`SELECT value FROM user_config WHERE key = 'max_streak'`)
-      return r && parseInt(r.value, 10) >= 30
+      const statDays = await getStudyStatDays()
+      return calculateMaxStreakFromDays(statDays) >= 30
     }
   },
   {
     id: 'total_100h', name: '百日磨剑', icon: '🏆',
     desc: '累计学习 100 小时',
     check: async () => {
-      const r = await getOne(`SELECT value FROM user_config WHERE key = 'total_study_seconds'`)
-      return r && parseInt(r.value, 10) >= 100 * 3600
+      const rows = await getEndedSessionRows()
+      return rows.reduce((sum, row) => sum + getSessionTotalSeconds(row), 0) >= 100 * 3600
     }
   },
   {
     id: 'total_1000h', name: '千锤百炼', icon: '💎',
     desc: '累计学习 1000 小时',
     check: async () => {
-      const r = await getOne(`SELECT value FROM user_config WHERE key = 'total_study_seconds'`)
-      return r && parseInt(r.value, 10) >= 1000 * 3600
+      const rows = await getEndedSessionRows()
+      return rows.reduce((sum, row) => sum + getSessionTotalSeconds(row), 0) >= 1000 * 3600
     }
   },
   {
     id: 'single_8h', name: '闪电突击', icon: '⚡',
     desc: '单日学习超过 8 小时',
     check: async () => {
-      const today = await getTodayStats()
-      return today.totalSeconds >= 8 * 3600
+      return hasStatDayAtLeastSeconds(8 * 3600)
     }
   },
   {
@@ -942,6 +1090,18 @@ const BADGE_DEFINITIONS = [
     }
   }
 ]
+
+async function checkEarnedBadgeIds() {
+  const earned = []
+  for (const badge of BADGE_DEFINITIONS) {
+    try {
+      if (await badge.check()) earned.push(badge.id)
+    } catch (e) {
+      // ignore single badge check errors
+    }
+  }
+  return earned
+}
 
 async function checkAndUnlockBadges() {
   try {
@@ -978,12 +1138,15 @@ async function checkAndUnlockBadges() {
   }
 }
 
+async function syncEarnedBadgesCache() {
+  const earned = await checkEarnedBadgeIds()
+  await runSql(`INSERT OR REPLACE INTO user_config(key, value) VALUES (?, ?)`,
+    ['earned_badges', JSON.stringify(earned)])
+  return earned
+}
+
 ipcMain.handle('badge:get-all', async () => {
-  const earnedRow = await getOne(`SELECT value FROM user_config WHERE key = 'earned_badges'`)
-  let earned = []
-  if (earnedRow && earnedRow.value) {
-    try { earned = JSON.parse(earnedRow.value) } catch (e) {}
-  }
+  const earned = await syncEarnedBadgesCache()
   return BADGE_DEFINITIONS.map(b => ({
     id: b.id,
     name: b.name,
@@ -991,6 +1154,109 @@ ipcMain.handle('badge:get-all', async () => {
     desc: b.desc,
     earned: earned.includes(b.id)
   }))
+})
+
+// =============== IPC: 学习宠物 ===============
+function getPetDateKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+const PET_IDS = ['cat', 'dog', 'owl']
+
+function getDefaultPetState() {
+  return {
+    activePetId: 'cat',
+    unlockedPets: ['cat'],
+    pets: {
+      cat: {
+        level: 1,
+        exp: 0,
+        mood: 80,
+        affection: 20,
+        energy: 100,
+        totalStudyTime: 0,
+        createdAt: new Date().toISOString(),
+        lastInteractAt: null
+      }
+    },
+    dailyStats: {
+      date: getPetDateKey(),
+      interactCount: 0
+    },
+    enabled: true,
+    version: 1
+  }
+}
+
+function normalizePetState(rawState) {
+  const defaults = getDefaultPetState()
+  const state = rawState && typeof rawState === 'object' ? rawState : {}
+  const normalized = {
+    ...defaults,
+    ...state,
+    activePetId: state.activePetId && PET_IDS.includes(state.activePetId) ? state.activePetId : defaults.activePetId,
+    unlockedPets: Array.isArray(state.unlockedPets) && state.unlockedPets.length
+      ? [...new Set(['cat', ...state.unlockedPets.filter(id => PET_IDS.includes(id))])]
+      : defaults.unlockedPets,
+    pets: state.pets && typeof state.pets === 'object' ? state.pets : defaults.pets,
+    dailyStats: state.dailyStats && typeof state.dailyStats === 'object' ? state.dailyStats : defaults.dailyStats,
+    enabled: state.enabled !== false,
+    version: 1
+  }
+
+  if (!normalized.pets.cat) normalized.pets.cat = defaults.pets.cat
+  if (!normalized.unlockedPets.includes('cat')) normalized.unlockedPets.unshift('cat')
+  if (!normalized.unlockedPets.includes(normalized.activePetId)) normalized.activePetId = 'cat'
+
+  const today = getPetDateKey()
+  if (normalized.dailyStats.date !== today) {
+    normalized.dailyStats = { date: today, interactCount: 0 }
+  }
+
+  return normalized
+}
+
+ipcMain.handle('pet:get-state', async () => {
+  const row = await getOne('SELECT value FROM user_config WHERE key = ?', ['pet_state'])
+  let state = getDefaultPetState()
+  if (row && row.value) {
+    try { state = normalizePetState(JSON.parse(row.value)) } catch (e) { state = getDefaultPetState() }
+  }
+  await runSql(
+    'INSERT OR REPLACE INTO user_config(key, value) VALUES (?, ?)',
+    ['pet_state', JSON.stringify(state)]
+  )
+  return state
+})
+
+ipcMain.handle('pet:save-state', async (_event, state) => {
+  const normalized = normalizePetState(state)
+  await runSql(
+    'INSERT OR REPLACE INTO user_config(key, value) VALUES (?, ?)',
+    ['pet_state', JSON.stringify(normalized)]
+  )
+  return true
+})
+
+ipcMain.handle('pet:check-unlocks', async () => {
+  const rows = await getEndedSessionRows()
+  const totalSeconds = rows.reduce((sum, row) => sum + getSessionTotalSeconds(row), 0)
+  const earned = await checkEarnedBadgeIds()
+  const statDays = await getStudyStatDays()
+  const maxStreak = calculateMaxStreakFromDays(statDays)
+  const unlockable = ['cat']
+
+  if (totalSeconds >= 10 * 3600 || maxStreak >= 7) unlockable.push('dog')
+  if (earned.length >= 5 || totalSeconds >= 50 * 3600) unlockable.push('owl')
+
+  return {
+    unlockable,
+    metrics: {
+      totalSeconds,
+      badgeCount: earned.length,
+      maxStreak
+    }
+  }
 })
 
 // =============== IPC: 数据导出 ===============
@@ -1030,12 +1296,13 @@ ipcMain.handle('data:export', async (event, format) => {
     const headers = ['id', '开始时间', '结束时间', '时长(秒)', '时长(格式化)', '标签', '备注']
     const lines = [headers.join(',')]
     sessions.forEach(s => {
+      const duration = s.end_time ? getSessionTotalSeconds(s) : 0
       const cols = [
         s.id,
         `"${s.start_time || ''}"`,
         `"${s.end_time || ''}"`,
-        s.duration || 0,
-        `"${formatDurationSimple(s.duration || 0)}"`,
+        duration,
+        `"${formatDurationSimple(duration)}"`,
         `"${s.tags || ''}"`,
         `"${(s.note || '').replace(/"/g, '""')}"`
       ]

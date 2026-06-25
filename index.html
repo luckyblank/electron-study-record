@@ -78,6 +78,32 @@
             <span id="progress-percent">0</span><span class="ring-unit">%</span>
           </div>
         </div>
+
+        <div id="pet-container" class="pet-container" aria-label="学习宠物">
+          <div class="pet-shell">
+            <button id="pet-visual" class="pet-visual" type="button" aria-label="和学习宠物互动"></button>
+            <div id="pet-status-hint" class="pet-status-hint hidden" role="status"></div>
+            <div class="pet-level-badge" id="pet-level-badge">Lv.1</div>
+            <div class="pet-exp-bar" title="升级进度">
+              <div class="pet-exp-fill" id="pet-exp-fill"></div>
+            </div>
+          </div>
+          <div class="pet-stats" aria-label="宠物状态">
+            <div class="pet-stat" title="心情">
+              <span class="pet-stat-label">心情</span>
+              <div class="pet-stat-bar"><div class="pet-stat-fill mood-fill" id="mood-fill"></div></div>
+            </div>
+            <div class="pet-stat" title="能量">
+              <span class="pet-stat-label">能量</span>
+              <div class="pet-stat-bar"><div class="pet-stat-fill energy-fill" id="energy-fill"></div></div>
+            </div>
+            <div class="pet-stat" title="亲密度">
+              <span class="pet-stat-label">亲密</span>
+              <div class="pet-stat-bar"><div class="pet-stat-fill affection-fill" id="affection-fill"></div></div>
+            </div>
+          </div>
+          <div id="pet-particles" class="pet-particles" aria-hidden="true"></div>
+        </div>
         <div class="today-info">
           <div class="label-row">
             <span class="status-dot" id="status-dot"></span>
@@ -91,7 +117,7 @@
           <div id="today-duration"><span class="digits">00:00:00</span><span class="mini-percent" id="mini-percent">0%</span></div>
           <div class="mini-progress-bar" id="mini-progress-bar"></div>
           <div class="meta-row">
-            <span id="goal-info">目标 2h · 剩余 2h</span>
+            <!-- <span id="goal-info">目标 2h · 剩余 2h</span> -->
             <span class="inline-quote" id="inline-quote" title="每日寄语">心若有所向，平凡亦有光。</span>
           </div>
         </div>
@@ -130,39 +156,46 @@
         <span class="settings-title">设置面板</span>
         <button class="settings-close-btn" id="settings-close-btn">×</button>
       </div>
-      <div class="settings-grid">
-      <button class="settings-card" id="set-time-range">
-        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
-        <span>时间区间</span>
-      </button>
-      <button class="settings-card" id="set-goal">
-        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor"></circle></svg>
-        <span>学习目标</span>
-      </button>
-      <button class="settings-card" id="history-fab">
-        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h12"></path></svg>
-        <span>学习历史</span>
-      </button>
-      <button class="settings-card" id="open-stats">
-        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="18" y1="20" x2="18" y2="14"></line></svg>
-        <span>数据统计</span>
-      </button>
-      <button class="settings-card" id="open-tags">
-        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
-        <span>标签管理</span>
-      </button>
-      <button class="settings-card" id="open-badges">
-        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"></circle><path d="M15.5 13L17 22l-5-3-5 3 1.5-9"></path></svg>
-        <span>我的徽章</span>
-      </button>
-      <button class="settings-card" id="open-quotes">
-        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l1.7-5.1A9 9 0 1 1 8.1 19.3z"></path></svg>
-        <span>每日寄语</span>
-      </button>
-      <button class="settings-card" id="open-export">
-        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-        <span>导出数据</span>
-      </button>
+      <div class="settings-body" data-reset-scroll>
+        <div class="settings-grid settings-grid-main">
+          <button class="settings-card" id="history-fab" title="查看学习记录">
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h12"></path></svg>
+            <span>学习历史</span>
+          </button>
+          <button class="settings-card" id="open-stats" title="查看统计图表">
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="18" y1="20" x2="18" y2="14"></line></svg>
+            <span>数据统计</span>
+          </button>
+          <button class="settings-card" id="open-export" title="备份或分析数据">
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>导出数据</span>
+          </button>
+          <button class="settings-card" id="set-time-range" title="调整统计日边界">
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
+            <span>时间区间</span>
+          </button>
+          <button class="settings-card" id="set-goal" title="设置每日和每周目标">
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor"></circle></svg>
+            <span>学习目标</span>
+          </button>
+          <button class="settings-card" id="open-tags" title="管理学习标签">
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+            <span>标签管理</span>
+          </button>
+          <button class="settings-card" id="open-badges" title="查看解锁成就">
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"></circle><path d="M15.5 13L17 22l-5-3-5 3 1.5-9"></path></svg>
+            <span>我的徽章</span>
+          </button>
+          <button class="settings-card" id="open-pets" title="查看和切换学习宠物">
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 10.5c0-2.8 2-5 4.5-5s4.5 2.2 4.5 5v2.3c0 2.4-2 4.4-4.5 4.4s-4.5-2-4.5-4.4z"></path><path d="M8.7 7.1 6.6 4.8M15.3 7.1l2.1-2.3M10 11h.01M14 11h.01M10.5 14c.9.7 2.1.7 3 0"></path></svg>
+            <span>我的宠物</span>
+          </button>
+          <button class="settings-card" id="open-quotes" title="编辑每日寄语">
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21l1.7-5.1A9 9 0 1 1 8.1 19.3z"></path></svg>
+            <span>每日寄语</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -219,7 +252,29 @@
             <input type="time" id="time-range-end">
           </div>
         </div>
-        <div class="form-hint">如 05:00 - 05:00 表示一天从凌晨 5 点算起，到次日 5 点结束</div>
+        <div class="form-hint">选择统计日的起止时间。跨天设置适合夜间学习者，让夜间学习归到同一“学习日”。</div>
+        <div class="time-range-presets" id="time-range-presets">
+          <label class="preset-option">
+            <input type="radio" name="time-preset" value="natural" data-start="00:00" data-end="00:00">
+            <span class="preset-label">自然日</span>
+            <span class="preset-value">00:00 - 00:00</span>
+          </label>
+          <label class="preset-option">
+            <input type="radio" name="time-preset" value="study" data-start="05:00" data-end="05:00">
+            <span class="preset-label">学习日</span>
+            <span class="preset-value">05:00 - 05:00</span>
+          </label>
+          <label class="preset-option">
+            <input type="radio" name="time-preset" value="workday" data-start="08:00" data-end="22:00">
+            <span class="preset-label">工作日</span>
+            <span class="preset-value">08:00 - 22:00</span>
+          </label>
+          <label class="preset-option">
+            <input type="radio" name="time-preset" value="custom">
+            <span class="preset-label">自定义</span>
+            <span class="preset-value">手动设置</span>
+          </label>
+        </div>
       </div>
       <div class="modal-footer">
         <button id="time-range-cancel">取消</button>
@@ -377,6 +432,21 @@
     </div>
   </div>
 
+  <!-- 宠物弹窗 -->
+  <div id="pet-modal" class="hidden modal-root">
+    <div class="modal-backdrop" data-close="pet-modal"></div>
+    <div class="modal-panel modal-center modal-md pet-modal-panel">
+      <div class="modal-header">
+        <span class="modal-title">我的宠物</span>
+        <span class="header-meta" id="pet-modal-meta">成长伙伴</span>
+        <button class="modal-close-btn" data-close="pet-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="pet-collection" id="pet-collection"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- 导出弹窗 -->
   <div id="export-modal" class="hidden modal-root">
     <div class="modal-backdrop" data-close="export-modal"></div>
@@ -467,17 +537,64 @@
 
   <!-- 更新弹窗（自渲染，替代系统 dialog） -->
   <div id="update-modal" class="hidden modal-root">
-    <div class="modal-backdrop" data-close="update-modal"></div>
+    <div class="modal-backdrop" data-update-close></div>
     <div class="modal-panel modal-md update-panel">
       <div class="modal-header">
         <span class="modal-title">发现新版本</span>
         <span class="header-meta" id="update-version-tag">—</span>
-        <button class="modal-close-btn" data-close="update-modal">×</button>
+        <button class="modal-close-btn" data-update-close>×</button>
       </div>
       <div class="modal-body update-notes" id="update-notes"></div>
+      <div class="update-progress hidden" id="update-progress">
+        <div class="update-progress-bar" id="update-progress-bar"></div>
+        <span class="update-progress-text" id="update-progress-text">0%</span>
+      </div>
+      <div class="update-downloading-overlay hidden" id="update-downloading-overlay">
+        <svg class="update-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10" stroke="var(--accent)"></path>
+        </svg>
+        <span class="update-downloading-text" id="update-downloading-text">准备下载...</span>
+      </div>
       <div class="modal-footer">
         <button id="update-later-btn">稍后</button>
         <button id="update-now-btn" class="primary">立即更新</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 首次使用引导弹窗 -->
+  <div id="onboarding-modal" class="hidden modal-root">
+    <div id="onboarding-backdrop" class="modal-backdrop"></div>
+    <div class="modal-panel modal-center modal-sm onboarding-panel">
+      <div class="onboarding-hero">
+        <div class="onboarding-icon" aria-hidden="true">i</div>
+        <div>
+          <div class="onboarding-title">欢迎使用学习时间记录</div>
+          <div class="onboarding-subtitle">三步开始你的高效学习之旅</div>
+        </div>
+      </div>
+      <div class="onboarding-content">
+        <div class="onboarding-step">
+          <span class="step-number">1</span>
+          <span>点击「开始记录」或按 <kbd>Ctrl+Alt+S</kbd></span>
+        </div>
+        <div class="onboarding-step">
+          <span class="step-number">2</span>
+          <span>需要休息时按 <kbd>Ctrl+Alt+P</kbd> 暂停</span>
+        </div>
+        <div class="onboarding-step">
+          <span class="step-number">3</span>
+          <span>完成后按 <kbd>Ctrl+Alt+E</kbd> 结束记录</span>
+        </div>
+        <div class="onboarding-hint">更多功能在右上角设置按钮中探索。</div>
+      </div>
+      <label class="onboarding-checkbox">
+        <input type="checkbox" id="onboarding-dont-show" checked>
+        <span>下次启动不再显示</span>
+      </label>
+      <div class="modal-footer onboarding-footer">
+        <button id="onboarding-start" class="primary">开始使用</button>
       </div>
     </div>
   </div>
@@ -491,6 +608,12 @@
     </div>
     <div class="stp-body" id="stp-options"></div>
     <div class="stp-empty hidden" id="stp-empty">暂无标签，先到 <span>设置 · 标签管理</span> 添加</div>
+  </div>
+
+  <!-- 图表悬浮提示 -->
+  <div id="chart-tooltip" class="chart-tooltip hidden">
+    <div class="tooltip-date"></div>
+    <div class="tooltip-value"></div>
   </div>
 
   <!-- 吐司通知 -->

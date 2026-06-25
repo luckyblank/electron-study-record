@@ -13,6 +13,9 @@ const PROGRESS_RING_CIRCUMFERENCE = 201.06  // 2π × 32
 // ---------- 状态 ----------
 let currentSessionId = null
 let currentSessionStartTime = null
+let isPaused = false
+let currentSessionPausedAt = null
+let currentSessionPausedDuration = 0
 let updateTimer = null
 let todayTimeUpdateTimer = null
 let lastDisplaySeconds = -1
@@ -108,6 +111,15 @@ function inStatRange(startTime, timeRange, now = new Date()) {
   return startTime >= startOfDay && startTime < endOfDay
 }
 
+function getCurrentSessionElapsedSeconds(now = new Date()) {
+  if (!currentSessionStartTime) return 0
+  let elapsed = Math.floor((now - currentSessionStartTime) / 1000) - currentSessionPausedDuration
+  if (isPaused && currentSessionPausedAt) {
+    elapsed -= Math.max(0, Math.floor((now - currentSessionPausedAt) / 1000))
+  }
+  return Math.max(0, elapsed)
+}
+
 // ---------- 今日时长计算 ----------
 async function calculateTodaySeconds() {
   const list = await window.studyRecord.getAllSessions()
@@ -172,8 +184,7 @@ async function updateTodayDuration() {
   let todaySeconds = await calculateTodaySeconds()
 
   if (currentSessionStartTime) {
-    const now = new Date()
-    todaySeconds += Math.floor((now - currentSessionStartTime) / 1000)
+    todaySeconds += getCurrentSessionElapsedSeconds()
   }
 
   // 更新数字
@@ -374,9 +385,9 @@ function renderHistoryItem(item) {
           <div class="nm-card-time">
             <span class="nm-time-start">${formatHistoryTime(st)}</span>
             <span class="nm-time-sep">—</span>
-            <span class="nm-time-end">${ed ? formatHistoryTime(ed) : '进行中…'}</span>
+            <span class="nm-time-end">${ed ? formatHistoryTime(ed) : (item.paused_at ? '已暂停' : '进行中…')}</span>
           </div>
-          <span class="nm-duration">${item.duration ? formatDuration(item.duration) : (item.end_time ? '00:00:00' : '计时中')}</span>
+          <span class="nm-duration">${item.duration ? formatDuration(item.duration) : (item.end_time ? '00:00:00' : (item.paused_at ? '已暂停' : '计时中'))}</span>
           ${deleteBtn}
         </div>
         ${tagsHtml}
@@ -404,15 +415,20 @@ async function loadHistoryAndToday() {
   try {
     const list = await window.studyRecord.getAllSessions()
     const historyListEl = document.getElementById('history-list')
+    currentSessionId = null
+    currentSessionStartTime = null
+    currentSessionPausedDuration = 0
+    isPaused = false
+    currentSessionPausedAt = null
     if (historyListEl) {
       historyListEl.innerHTML = ''
-      currentSessionId = null
       list.forEach((item) => {
         if (!item.end_time) {
           currentSessionId = item.id
-          if (!currentSessionStartTime) {
-            currentSessionStartTime = parseChinaTime(item.start_time)
-          }
+          currentSessionStartTime = parseChinaTime(item.start_time)
+          currentSessionPausedDuration = parseInt(item.paused_duration, 10) || 0
+          isPaused = !!item.paused_at
+          currentSessionPausedAt = item.paused_at ? parseChinaTime(item.paused_at) : null
         }
         historyListEl.appendChild(renderHistoryItem(item))
       })
@@ -423,7 +439,10 @@ async function loadHistoryAndToday() {
       list.forEach(item => {
         if (!item.end_time) {
           currentSessionId = item.id
-          if (!currentSessionStartTime) currentSessionStartTime = parseChinaTime(item.start_time)
+          currentSessionStartTime = parseChinaTime(item.start_time)
+          currentSessionPausedDuration = parseInt(item.paused_duration, 10) || 0
+          isPaused = !!item.paused_at
+          currentSessionPausedAt = item.paused_at ? parseChinaTime(item.paused_at) : null
         }
       })
     }
@@ -431,13 +450,23 @@ async function loadHistoryAndToday() {
     await updateTodayDuration()
     await updateStreakDisplay()
 
-    document.getElementById('start-btn').disabled = !!currentSessionId
-    document.getElementById('end-btn').disabled = !currentSessionId
+    const startBtn = document.getElementById('start-btn')
+    const endBtn = document.getElementById('end-btn')
+    if (startBtn) {
+      startBtn.disabled = !!currentSessionId
+      startBtn.classList.toggle('control-hidden', !!currentSessionId)
+    }
+    if (endBtn) {
+      endBtn.disabled = !currentSessionId
+      endBtn.classList.toggle('control-hidden', !currentSessionId)
+    }
+    updatePauseButtonState()
 
     // 更新状态点 + body 标记
     const dot = document.getElementById('status-dot')
     if (dot) dot.classList.toggle('active', !!currentSessionId)
     document.body.classList.toggle('session-active', !!currentSessionId)
+    document.body.classList.toggle('session-paused', isPaused)
   } catch (e) {
     console.error('加载历史失败:', e)
   }
@@ -769,7 +798,13 @@ const sessionNotePopover = (() => {
 })()
 
 async function historyDelete(id) {
-  if (!confirm(`确认删除学习记录 #${id} 吗？`)) return
+  const confirmed = await showConfirm({
+    title: '删除学习记录',
+    text: `确认删除学习记录 #${id} 吗？删除后无法恢复。`,
+    okText: '删除',
+    type: 'danger'
+  })
+  if (!confirmed) return
   try {
     const result = await window.studyRecord.deleteSession({ id })
     if (result.success) {
@@ -796,6 +831,22 @@ async function updateStreakDisplay() {
 }
 
 // ---------- Session 操作 ----------
+function updatePauseButtonState() {
+  const pauseBtn = document.getElementById('pause-btn')
+  if (!pauseBtn) return
+  const label = pauseBtn.querySelector('span')
+  const pauseIcon = pauseBtn.querySelector('.pause-icon')
+  const resumeIcon = pauseBtn.querySelector('.resume-icon')
+  pauseBtn.disabled = !currentSessionId || sessionOpLock
+  pauseBtn.classList.toggle('is-paused', isPaused)
+  pauseBtn.classList.toggle('control-hidden', !currentSessionId)
+  if (label) label.textContent = isPaused ? '继续' : '暂停'
+  if (pauseIcon) pauseIcon.classList.toggle('hidden', isPaused)
+  if (resumeIcon) resumeIcon.classList.toggle('hidden', !isPaused)
+  pauseBtn.title = isPaused ? '继续当前记录（Ctrl+Alt+P）' : '暂停当前记录（Ctrl+Alt+P）'
+  document.body.classList.toggle('session-paused', isPaused)
+}
+
 async function startSession() {
   if (sessionOpLock) return
   sessionOpLock = true
@@ -804,6 +855,10 @@ async function startSession() {
     const id = await window.studyRecord.startSession(toChinaTimeString(now))
     currentSessionId = id
     currentSessionStartTime = now
+    currentSessionPausedDuration = 0
+    isPaused = false
+    currentSessionPausedAt = null
+    updatePauseButtonState()
     celebratedMilestones.clear()  // 新 session 重置里程碑
 
     await loadHistoryAndToday()
@@ -821,7 +876,60 @@ async function startSession() {
     showToast('开始失败: ' + (e && e.message ? e.message : e), 'warning', 4000)
   } finally {
     sessionOpLock = false
+    updatePauseButtonState()
   }
+}
+
+async function pauseSession() {
+  if (sessionOpLock || !currentSessionId || isPaused) return
+  sessionOpLock = true
+  updatePauseButtonState()
+  try {
+    const now = new Date()
+    const pausedAt = toChinaTimeString(now)
+    await window.studyRecord.pauseSession({ id: currentSessionId, pausedAt })
+    isPaused = true
+    currentSessionPausedAt = now
+    updatePauseButtonState()
+    await updateTodayDuration()
+    showToast('已暂停记录', 'info', 1600)
+  } catch (e) {
+    showToast('暂停失败: ' + (e && e.message ? e.message : e), 'warning', 3000)
+  } finally {
+    sessionOpLock = false
+    updatePauseButtonState()
+  }
+}
+
+async function resumeSession() {
+  if (sessionOpLock || !currentSessionId || !isPaused) return
+  sessionOpLock = true
+  updatePauseButtonState()
+  try {
+    const now = new Date()
+    const result = await window.studyRecord.resumeSession({
+      id: currentSessionId,
+      resumedAt: toChinaTimeString(now)
+    })
+    currentSessionPausedDuration = result && typeof result.pausedDuration === 'number'
+      ? result.pausedDuration
+      : currentSessionPausedDuration + Math.max(0, Math.floor((now - currentSessionPausedAt) / 1000))
+    isPaused = false
+    currentSessionPausedAt = null
+    updatePauseButtonState()
+    await updateTodayDuration()
+    showToast('已继续记录', 'success', 1600)
+  } catch (e) {
+    showToast('继续失败: ' + (e && e.message ? e.message : e), 'warning', 3000)
+  } finally {
+    sessionOpLock = false
+    updatePauseButtonState()
+  }
+}
+
+function togglePauseSession() {
+  if (isPaused) resumeSession()
+  else pauseSession()
 }
 
 async function endSession() {
@@ -833,8 +941,17 @@ async function endSession() {
     if (todayTimeUpdateTimer) { clearInterval(todayTimeUpdateTimer); todayTimeUpdateTimer = null }
     if (updateTimer) { clearInterval(updateTimer); updateTimer = null }
 
-    document.getElementById('end-btn').disabled = true
-    document.getElementById('start-btn').disabled = false
+    const startBtn = document.getElementById('start-btn')
+    const endBtn = document.getElementById('end-btn')
+    if (endBtn) {
+      endBtn.disabled = true
+      endBtn.classList.add('control-hidden')
+    }
+    if (startBtn) {
+      startBtn.disabled = false
+      startBtn.classList.remove('control-hidden')
+    }
+    updatePauseButtonState()
 
     await window.studyRecord.endSession({
       id: currentSessionId,
@@ -843,6 +960,10 @@ async function endSession() {
 
     currentSessionId = null
     currentSessionStartTime = null
+    currentSessionPausedDuration = 0
+    isPaused = false
+    currentSessionPausedAt = null
+    updatePauseButtonState()
 
     await loadHistoryAndToday()
     showToast('⏹ 已结束记录', 'info', 2200, true)
@@ -852,6 +973,7 @@ async function endSession() {
     showToast('结束失败: ' + (e && e.message ? e.message : e), 'warning', 4000)
   } finally {
     sessionOpLock = false
+    updatePauseButtonState()
   }
 }
 
@@ -898,6 +1020,7 @@ async function showToast(text, type = 'info', duration = 3000, useSystemNotify =
 
 // ---------- 弹窗工具 ----------
 let activeModalCount = 0
+let confirmResolve = null
 
 function showModal(id) {
   const el = document.getElementById(id)
@@ -1042,6 +1165,44 @@ function showMessage(text) {
   const close = () => hideModal('message-modal')
   okBtn.onclick = close
   backdrop.onclick = close
+}
+
+function showConfirm({ title = '确认操作', text = '', okText = '确认', cancelText = '取消', type = 'default' } = {}) {
+  const modal = document.getElementById('confirm-modal')
+  const titleEl = document.getElementById('confirm-title')
+  const textEl = document.getElementById('confirm-text')
+  const okBtn = document.getElementById('confirm-ok-btn')
+  const cancelBtn = document.getElementById('confirm-cancel-btn')
+  const backdrop = document.getElementById('confirm-modal-backdrop')
+  if (!(modal && titleEl && textEl && okBtn && cancelBtn && backdrop)) return Promise.resolve(false)
+
+  if (confirmResolve) confirmResolve(false)
+
+  titleEl.textContent = title
+  textEl.textContent = text
+  okBtn.textContent = okText
+  cancelBtn.textContent = cancelText
+  okBtn.className = type === 'danger' ? 'danger' : 'primary'
+
+  showModal('confirm-modal')
+
+  return new Promise(resolve => {
+    const close = (value) => {
+      if (!confirmResolve) return
+      const resolver = confirmResolve
+      confirmResolve = null
+      okBtn.onclick = null
+      cancelBtn.onclick = null
+      backdrop.onclick = null
+      hideModal('confirm-modal')
+      resolver(value)
+    }
+
+    confirmResolve = resolve
+    okBtn.onclick = () => close(true)
+    cancelBtn.onclick = () => close(false)
+    backdrop.onclick = () => close(false)
+  })
 }
 
 // ---------- 时间区间弹窗 ----------
@@ -1262,7 +1423,13 @@ async function renderTagList() {
     listEl.querySelectorAll('.tag-del-btn').forEach(btn => {
       btn.onclick = async () => {
         const id = parseInt(btn.getAttribute('data-id'), 10)
-        if (!confirm('确认删除该标签吗？相关记录将解除关联。')) return
+        const confirmed = await showConfirm({
+          title: '删除标签',
+          text: '确认删除该标签吗？相关记录将解除关联。',
+          okText: '删除',
+          type: 'danger'
+        })
+        if (!confirmed) return
         try {
           await window.studyRecord.tagDelete({ id })
           await renderTagList()
@@ -1392,7 +1559,13 @@ async function renderQuoteList() {
     listEl.querySelectorAll('.quote-del-btn').forEach(btn => {
       btn.onclick = async () => {
         const id = parseInt(btn.getAttribute('data-id'), 10)
-        if (!confirm('确认删除该寄语吗？')) return
+        const confirmed = await showConfirm({
+          title: '删除寄语',
+          text: '确认删除该寄语吗？删除后无法恢复。',
+          okText: '删除',
+          type: 'danger'
+        })
+        if (!confirmed) return
         try {
           await window.studyRecord.quoteDelete({ id })
           await renderQuoteList()
@@ -1542,6 +1715,9 @@ function bindGlobalShortcuts() {
     } else if (action === 'end') {
       const btn = document.getElementById('end-btn')
       if (btn && !btn.disabled) endSession()
+    } else if (action === 'togglePause') {
+      const btn = document.getElementById('pause-btn')
+      if (btn && !btn.disabled) togglePauseSession()
     } else if (action === 'end-and-quit') {
       // 安全退出：先结束 session 再确认
       if (currentSessionId) {
@@ -1669,6 +1845,8 @@ async function toggleMiniMode() {
 function bindMainButtons() {
   document.getElementById('start-btn').addEventListener('click', startSession)
   document.getElementById('end-btn').addEventListener('click', endSession)
+  const pauseBtn = document.getElementById('pause-btn')
+  if (pauseBtn) pauseBtn.addEventListener('click', togglePauseSession)
   document.getElementById('set-time-range').addEventListener('click', showTimeRangeModal)
 
   const setGoalBtn = document.getElementById('set-goal')
@@ -1732,6 +1910,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (currentSessionId && currentSessionStartTime) {
     if (todayTimeUpdateTimer) clearInterval(todayTimeUpdateTimer)
     todayTimeUpdateTimer = setInterval(updateTodayDuration, TIMER_INTERVALS.todayUpdate)
+    if (updateTimer) clearInterval(updateTimer)
+    updateTimer = setInterval(loadHistoryAndToday, TIMER_INTERVALS.historyRefresh)
   }
 })
 

@@ -222,6 +222,23 @@ body.mini-mode .titlebar-brand { display: none !important; }
 }
 
 .label { font-size: var(--fs-sm); color: var(--text-secondary); font-weight: 600; letter-spacing: 0.2px; }
+.pause-state {
+  display: none;
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+}
+body.session-paused .pause-state { display: inline-flex; }
+body.session-paused .status-dot.active {
+  background: var(--accent);
+  animation: none;
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
 
 /* 连续天数徽章 */
 .streak-badge {
@@ -295,6 +312,7 @@ body:not(.mini-mode) .mini-percent { display: none; }
 
 /* === 按钮 === */
 .btn-group { display: flex; gap: var(--sp-4); justify-content: center; }
+.btn-group .control-hidden { display: none !important; }
 
 button {
   padding: 0 12px; border-radius: 10px; border: 1px solid var(--border);
@@ -312,10 +330,40 @@ button.primary, #start-btn {
   background: var(--accent-gradient); color: #fff; border-color: transparent;
   box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.28);
 }
+button.danger {
+  background: rgba(226, 85, 85, 0.12);
+  color: var(--danger);
+  border-color: rgba(226, 85, 85, 0.25);
+}
+button.danger:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+  box-shadow: 0 6px 16px rgba(226, 85, 85, 0.22);
+}
 button.primary:hover, #start-btn:hover {
   box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.35);
 }
 .btn-icon { flex-shrink: 0; }
+#pause-btn {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+}
+#pause-btn:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
+  box-shadow: var(--shadow-sm);
+}
+#pause-btn.is-paused {
+  background: var(--accent-gradient);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(var(--accent-rgb), 0.22);
+}
+body.session-paused #today-duration .digits {
+  color: var(--text-secondary);
+  opacity: 0.72;
+}
 .btn-group button { min-width: 0; flex: 1; max-width: 140px; font-size: var(--fs-base); }
 
 /* === 设置面板标题头 === */
@@ -570,6 +618,23 @@ body.modal-open { overflow: hidden; }
 }
 .modal-footer.center { justify-content: center; }
 .modal-footer button { min-width: 52px; height: 24px; font-size: var(--fs-sm); }
+.confirm-panel { width: 278px; }
+.confirm-body { text-align: center; padding: var(--sp-2) var(--sp-1) 0; }
+.confirm-title {
+  font-size: var(--fs-base);
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: 0.2px;
+  margin-bottom: var(--sp-3);
+}
+.confirm-text {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.confirm-footer { justify-content: stretch; gap: var(--sp-3); }
+.confirm-footer button { flex: 1; height: 28px; }
 .modal-desc { font-size: var(--fs-xs); color: var(--text-secondary); margin: 2px 0 var(--sp-2); text-align: center; }
 
 /* === 学习历史弹窗（时间线风格） === */
@@ -1648,10 +1713,10 @@ body.mini-mode .mini-progress-bar.complete::after {
 body.mini-mode .btn-group {
   display: flex !important;
   flex-direction: row !important;
-  gap: 4px;
+  gap: 3px;
   flex-shrink: 0;
   margin: 0;
-  padding-right: 36px;  /* 给右上角关闭按钮留空间 */
+  padding-right: 34px;  /* 给右上角关闭按钮留空间 */
 }
 body.mini-mode .btn-group button {
   min-width: 0 !important;

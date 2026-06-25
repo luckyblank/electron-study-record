@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('studyRecord', {
     withTimeout(ipcRenderer.invoke('study:start-session', startTime), 5000, 'startSession'),
   endSession: ({ id, endTime }) =>
     withTimeout(ipcRenderer.invoke('study:end-session', { id, endTime }), 5000, 'endSession'),
+  pauseSession: ({ id, pausedAt }) =>
+    withTimeout(ipcRenderer.invoke('study:pause-session', { id, pausedAt }), 5000, 'pauseSession'),
+  resumeSession: ({ id, resumedAt }) =>
+    withTimeout(ipcRenderer.invoke('study:resume-session', { id, resumedAt }), 5000, 'resumeSession'),
   getAllSessions: () =>
     withTimeout(ipcRenderer.invoke('study:get-all-sessions'), 8000, 'getAllSessions'),
   deleteSession: ({ id }) =>

@@ -10,7 +10,7 @@ const CONFIG = {
     timeout: 5000,
     backupRetainDays: 30,
     // 当前代码支持的最新数据库版本
-    targetSchemaVersion: 1
+    targetSchemaVersion: 2
   },
 
   // UI 相关
@@ -40,6 +40,7 @@ const CONFIG = {
     showWindow: 'Ctrl+Alt+1',
     closeWindow: 'Ctrl+Alt+2',
     quit: 'Ctrl+Alt+Q',
+    pause: 'Ctrl+Alt+P',
     toggleMiniMode: 'Ctrl+Alt+M',
     toggleTheme: 'Ctrl+Alt+T'
   },

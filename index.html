@@ -82,6 +82,7 @@
           <div class="label-row">
             <span class="status-dot" id="status-dot"></span>
             <span class="label">今日学习</span>
+            <span class="pause-state" id="pause-state">已暂停</span>
             <span class="streak-badge" id="streak-badge" title="连续学习天数">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"></path></svg>
               <span id="streak-text">0</span>
@@ -104,7 +105,17 @@
           </svg>
           <span>开始记录</span>
         </button>
-        <button id="end-btn" title="快捷键：Ctrl+Alt+E" disabled>
+        <button id="pause-btn" class="control-hidden" title="快捷键：Ctrl+Alt+P" disabled>
+          <svg class="btn-icon pause-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="7" y="5" width="3.5" height="14" rx="1"></rect>
+            <rect x="13.5" y="5" width="3.5" height="14" rx="1"></rect>
+          </svg>
+          <svg class="btn-icon resume-icon hidden" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="6,4 20,12 6,20"></polygon>
+          </svg>
+          <span>暂停</span>
+        </button>
+        <button id="end-btn" class="control-hidden" title="快捷键：Ctrl+Alt+E" disabled>
           <svg class="btn-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
             <rect x="6" y="6" width="12" height="12" rx="1"></rect>
           </svg>
@@ -425,6 +436,21 @@
       </div>
       <div class="modal-footer center">
         <button id="message-ok" class="primary">知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 确认操作弹窗 -->
+  <div id="confirm-modal" class="hidden modal-root">
+    <div id="confirm-modal-backdrop" class="modal-backdrop"></div>
+    <div id="confirm-modal-content" class="modal-panel modal-center modal-sm confirm-panel">
+      <div class="modal-body confirm-body">
+        <div id="confirm-title" class="confirm-title">确认操作</div>
+        <div id="confirm-text" class="confirm-text"></div>
+      </div>
+      <div class="modal-footer confirm-footer">
+        <button id="confirm-cancel-btn">取消</button>
+        <button id="confirm-ok-btn" class="danger">确认</button>
       </div>
     </div>
   </div>

@@ -308,6 +308,7 @@ function registerGlobalShortcuts(win) {
     [CONFIG.shortcuts.start, () => win.webContents.send('global-shortcut', 'start')],
     [CONFIG.shortcuts.end, () => win.webContents.send('global-shortcut', 'end')],
     [CONFIG.shortcuts.quit, () => safeQuit(win)],
+    [CONFIG.shortcuts.pause, () => win.webContents.send('global-shortcut', 'togglePause')],
     [CONFIG.shortcuts.closeWindow, () => win.close()],
     [CONFIG.shortcuts.showWindow, () => win.show()],
     [CONFIG.shortcuts.toggleMiniMode, () => win.webContents.send('global-shortcut', 'toggleMiniMode')],
@@ -491,23 +492,65 @@ async function getTodayStats() {
 // =============== IPC: 学习记录 ===============
 ipcMain.handle('study:start-session', async (event, startTime) => {
   const result = await runSql(
-    'INSERT INTO study_sessions (start_time) VALUES (?)',
+    'INSERT INTO study_sessions (start_time, paused_duration) VALUES (?, 0)',
     [startTime]
   )
   return result.lastID
 })
 
+ipcMain.handle('study:pause-session', async (event, { id, pausedAt }) => {
+  const row = await getOne('SELECT id, end_time, paused_at FROM study_sessions WHERE id = ?', [id])
+  if (!row) throw new Error('记录不存在')
+  if (row.end_time) throw new Error('记录已结束')
+  if (row.paused_at) return { success: true, pausedAt: row.paused_at }
+
+  await runSql(
+    'UPDATE study_sessions SET paused_at = ? WHERE id = ?',
+    [pausedAt, id]
+  )
+  return { success: true, pausedAt }
+})
+
+ipcMain.handle('study:resume-session', async (event, { id, resumedAt }) => {
+  const row = await getOne(
+    'SELECT end_time, paused_at, COALESCE(paused_duration, 0) AS paused_duration FROM study_sessions WHERE id = ?',
+    [id]
+  )
+  if (!row) throw new Error('记录不存在')
+  if (row.end_time) throw new Error('记录已结束')
+  if (!row.paused_at) return { success: true, pausedDuration: row.paused_duration }
+
+  const pausedStart = parseDbTime(row.paused_at)
+  const resumed = parseDbTime(resumedAt)
+  const addedPausedSeconds = Math.max(0, Math.floor((resumed - pausedStart) / 1000))
+  const pausedDuration = (row.paused_duration || 0) + addedPausedSeconds
+
+  await runSql(
+    'UPDATE study_sessions SET paused_at = NULL, paused_duration = ? WHERE id = ?',
+    [pausedDuration, id]
+  )
+  return { success: true, pausedDuration }
+})
+
 ipcMain.handle('study:end-session', async (event, { id, endTime }) => {
-  const row = await getOne('SELECT start_time FROM study_sessions WHERE id = ?', [id])
+  const row = await getOne(
+    'SELECT start_time, paused_at, COALESCE(paused_duration, 0) AS paused_duration FROM study_sessions WHERE id = ?',
+    [id]
+  )
   if (!row) throw new Error('记录不存在')
 
   const start = parseDbTime(row.start_time)
   const end = parseDbTime(endTime)
-  const duration = Math.floor((end - start) / 1000)
+  let pausedDuration = row.paused_duration || 0
+  if (row.paused_at) {
+    const pausedStart = parseDbTime(row.paused_at)
+    pausedDuration += Math.max(0, Math.floor((end - pausedStart) / 1000))
+  }
+  const duration = Math.max(0, Math.floor((end - start) / 1000) - pausedDuration)
 
   await runSql(
-    'UPDATE study_sessions SET end_time = ?, duration = ? WHERE id = ?',
-    [endTime, duration, id]
+    'UPDATE study_sessions SET end_time = ?, duration = ?, paused_at = NULL, paused_duration = ? WHERE id = ?',
+    [endTime, duration, pausedDuration, id]
   )
 
   // 更新累计统计

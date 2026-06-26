@@ -491,7 +491,10 @@ button.primary:hover, #start-btn:hover {
   background: var(--warning-soft);
   color: var(--warning);
   border-color: rgba(var(--warning-rgb), 0.38);
-  box-shadow: 0 0 0 3px rgba(var(--warning-rgb), 0.10), 0 4px 12px rgba(var(--warning-rgb), 0.18);
+}
+#pause-btn.is-paused:hover {
+  background: color-mix(in srgb, var(--warning) 18%, var(--bg-card));
+  border-color: rgba(var(--warning-rgb), 0.55);
 }
 body.session-paused #today-duration .digits {
   color: var(--text-secondary);
@@ -518,6 +521,9 @@ body.session-paused #today-duration .digits {
 }
 #end-btn:not(.control-hidden) {
   grid-column: 2 / -1;
+}
+#end-btn:not(.control-hidden):hover {
+  box-shadow: var(--shadow-sm);
 }
 
 /* === 设置面板标题头 === */
@@ -2014,7 +2020,7 @@ body.mini-mode .tb-btn:hover {
   transform: none;
 }
 body.mini-mode .tb-btn-close:hover {
-  background: rgba(226, 85, 85, 0.85); color: #fff;
+  background: var(--danger-soft); color: var(--danger);
 }
 
 /* 主面板：填满整个窗口 */
@@ -2156,8 +2162,8 @@ body.mini-mode .btn-group {
 }
 body.mini-mode .btn-group button {
   min-width: 0 !important;
-  width: 28px !important;
-  height: 28px !important;
+  width: 22px !important;
+  height: 22px !important;
   max-width: none !important;
   flex: 0 0 auto !important;
   padding: 0 !important;
@@ -2200,6 +2206,16 @@ body.mini-mode #end-btn:not(:disabled):hover {
 }
 body.mini-mode .btn-group button span { display: none; }
 body.mini-mode .btn-group .btn-icon { width: 12px; height: 12px; }
+
+body.mini-mode #pause-btn.is-paused{
+  background: rgba(var(--warning-rgb), 0.16) !important;
+  color: var(--warning) !important;
+  box-shadow:none !important;
+}
+body.mini-mode #pause-btn.is-paused:hover {
+  background: rgba(var(--warning-rgb), 0.28) !important;
+  color: var(--warning) !important;
+}
 
 /* 拖拽：整个面板可拖，按钮除外 */
 body.mini-mode .study-status {
@@ -2520,7 +2536,7 @@ body.mini-mode .pet-container {
 }
 body.mini-mode .pet-container:hover { transform: none; }
 body.mini-mode .pet-shell { width: 34px; height: 34px; }
-body.mini-mode .pet-visual { width: 32px; height: 32px; border-radius: 11px; }
+body.mini-mode .pet-visual { width: 32px; height: 32px;min-width: 32px;border-radius: 11px; }
 body.mini-mode .pet-level-badge,
 body.mini-mode .pet-exp-bar,
 body.mini-mode .pet-stats,

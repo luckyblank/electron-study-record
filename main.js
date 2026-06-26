@@ -197,6 +197,9 @@ function createWindow() {
   win.removeMenu && win.removeMenu()
   win.loadFile('index.html')
 
+  win.once('ready-to-show', () => { updateThumbarButtons(win) })
+  win.webContents.on('did-finish-load', () => { updateThumbarButtons(win) })
+
   win.once('focus', () => win.flashFrame(false))
   win.flashFrame(true)
 
@@ -263,8 +266,8 @@ function createTray(win) {
   }
 
   appTray = new Tray(trayIcon || undefined)
-  updateTrayMenu(win)
   appTray.setToolTip('学习时间记录')
+  updateTrayMenu(win)
 
   appTray.on('double-click', () => {
     win.show()
@@ -278,42 +281,113 @@ function createTray(win) {
   })
 }
 
-// 动态更新托盘菜单（显示今日时长）
-async function updateTrayMenu(win) {
-  if (!appTray) return
-  let todayDurationText = ''
-  let sessionStateText = ''
-  try {
-    const todayInfo = await getTodayStats()
-    todayDurationText = `📊 今日: ${formatDurationSimple(todayInfo.totalSeconds)}`
-  } catch (e) {
-    todayDurationText = '📊 今日学习'
-  }
+// 查询当前活动 session 状态：none | running | paused
+async function getActiveSessionState() {
   try {
     const active = await getOne(
       `SELECT paused_at FROM study_sessions WHERE end_time IS NULL ORDER BY id DESC LIMIT 1`
     )
-    if (active) sessionStateText = active.paused_at ? '当前记录：[暂停中]' : '当前记录：进行中'
-  } catch (e) {}
+    if (!active) return 'none'
+    return active.paused_at ? 'paused' : 'running'
+  } catch (e) {
+    return 'none'
+  }
+}
 
-  const template = [
-    { label: todayDurationText, enabled: false }
-  ]
-  if (sessionStateText) template.push({ label: sessionStateText, enabled: false })
+// 向 renderer 发送一个会话操作意图（复用全局快捷键通道，保持 UI 状态一致）
+function sendSessionAction(win, action) {
+  if (!win || win.isDestroyed()) return
+  if (isUpdateInteractionLocked()) return
+  win.webContents.send('global-shortcut', action)
+}
+
+// 动态更新托盘菜单（显示今日时长 + 会话操作）
+async function updateTrayMenu(win) {
+  if (!appTray) return
+  const state = await getActiveSessionState()
+
+  // 把状态信息搬到 tooltip：右键菜单只保留可操作项，更简洁
+  let today = ''
+  try {
+    const info = await getTodayStats()
+    today = formatDurationSimple(info.totalSeconds)
+  } catch (e) {}
+  const stateText = state === 'paused' ? '已暂停' : state === 'running' ? '进行中' : '未开始'
+  const tooltip = `学习时间记录\n今日 ${today || '00:00:00'} · ${stateText}`
+  appTray.setToolTip(tooltip)
+
+  const SC = CONFIG.shortcuts
+  const template = []
+
+  if (state === 'none') {
+    template.push({
+      label: '开始记录',
+      accelerator: SC.start,
+      click: () => sendSessionAction(win, 'start')
+    })
+  } else {
+    template.push({
+      label: state === 'paused' ? '继续记录' : '暂停记录',
+      accelerator: SC.pause,
+      click: () => sendSessionAction(win, 'togglePause')
+    })
+    template.push({
+      label: '结束记录',
+      accelerator: SC.end,
+      click: () => sendSessionAction(win, 'end')
+    })
+  }
+
   template.push(
     { type: 'separator' },
-    {
-      label: '显示主窗口',
-      click: () => win.show()
-    },
-    {
-      label: '退出',
-      click: () => safeQuit(win)
-    }
+    { label: '显示窗口', accelerator: SC.showWindow, click: () => win.show() },
+    { label: '退出', accelerator: SC.quit, click: () => safeQuit(win) }
   )
 
-  const contextMenu = Menu.buildFromTemplate(template)
-  appTray.setContextMenu(contextMenu)
+  appTray.setContextMenu(Menu.buildFromTemplate(template))
+}
+
+// =============== 任务栏缩略图按钮 (Windows Thumbar) ===============
+let thumbarIcons = null
+function getThumbarIcons() {
+  if (thumbarIcons) return thumbarIcons
+  const dir = path.join(__dirname, 'assets', 'thumb')
+  const load = (name) => {
+    try {
+      const img = nativeImage.createFromPath(path.join(dir, `${name}.png`))
+      return img.isEmpty() ? null : img
+    } catch (e) {
+      return null
+    }
+  }
+  thumbarIcons = { play: load('play'), pause: load('pause'), stop: load('stop') }
+  return thumbarIcons
+}
+
+async function updateThumbarButtons(win) {
+  if (!win || win.isDestroyed()) return
+  if (typeof win.setThumbarButtons !== 'function') return // 非 Windows
+  const icons = getThumbarIcons()
+  const state = await getActiveSessionState()
+
+  const buttons = []
+  if (state === 'none') {
+    if (icons.play) buttons.push({
+      icon: icons.play, tooltip: '开始记录',
+      click: () => sendSessionAction(win, 'start')
+    })
+  } else {
+    if (state === 'paused' && icons.play) {
+      buttons.push({ icon: icons.play, tooltip: '继续', click: () => sendSessionAction(win, 'togglePause') })
+    } else if (state === 'running' && icons.pause) {
+      buttons.push({ icon: icons.pause, tooltip: '暂停', click: () => sendSessionAction(win, 'togglePause') })
+    }
+    if (icons.stop) buttons.push({
+      icon: icons.stop, tooltip: '结束记录',
+      click: () => sendSessionAction(win, 'end')
+    })
+  }
+  try { win.setThumbarButtons(buttons) } catch (e) { /* 忽略平台不支持 */ }
 }
 
 function formatDurationSimple(sec) {
@@ -673,6 +747,8 @@ ipcMain.handle('study:start-session', async (event, startTime) => {
     'INSERT INTO study_sessions (start_time, paused_duration) VALUES (?, 0)',
     [startTime]
   )
+  if (appTray && mainWindow) updateTrayMenu(mainWindow)
+  if (mainWindow) updateThumbarButtons(mainWindow)
   return result.lastID
 })
 
@@ -687,6 +763,7 @@ ipcMain.handle('study:pause-session', async (event, { id, pausedAt }) => {
     [pausedAt, id]
   )
   if (appTray && mainWindow) updateTrayMenu(mainWindow)
+  if (mainWindow) updateThumbarButtons(mainWindow)
   return { success: true, pausedAt }
 })
 
@@ -709,6 +786,7 @@ ipcMain.handle('study:resume-session', async (event, { id, resumedAt }) => {
     [pausedDuration, id]
   )
   if (appTray && mainWindow) updateTrayMenu(mainWindow)
+  if (mainWindow) updateThumbarButtons(mainWindow)
   return { success: true, pausedDuration }
 })
 
@@ -746,6 +824,7 @@ ipcMain.handle('study:end-session', async (event, { id, endTime }) => {
   if (appTray && mainWindow) {
     updateTrayMenu(mainWindow)
   }
+  if (mainWindow) updateThumbarButtons(mainWindow)
 
   return { success: true, duration }
 })
@@ -764,6 +843,7 @@ ipcMain.handle('study:delete-session', async (event, { id }) => {
   if (result.changes > 0) {
     await syncEarnedBadgesCache()
     if (appTray && mainWindow) updateTrayMenu(mainWindow)
+    if (mainWindow) updateThumbarButtons(mainWindow)
   }
   return {
     success: result.changes > 0,

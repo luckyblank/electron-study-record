@@ -170,6 +170,10 @@
             <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             <span>导出数据</span>
           </button>
+          <button class="settings-card" id="open-share" title="生成今日/本周总结分享卡片">
+            <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"></line><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"></line></svg>
+            <span>分享卡片</span>
+          </button>
           <button class="settings-card" id="set-time-range" title="调整统计日边界">
             <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15 14"></polyline></svg>
             <span>时间区间</span>
@@ -435,7 +439,7 @@
   <!-- 宠物弹窗 -->
   <div id="pet-modal" class="hidden modal-root">
     <div class="modal-backdrop" data-close="pet-modal"></div>
-    <div class="modal-panel modal-center modal-md pet-modal-panel">
+    <div class="modal-panel modal-center modal-lg pet-modal-panel">
       <div class="modal-header">
         <span class="modal-title">我的宠物</span>
         <span class="header-meta" id="pet-modal-meta">成长伙伴</span>
@@ -472,6 +476,63 @@
           </button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- 分享卡片弹窗 -->
+  <div id="share-modal" class="hidden modal-root">
+    <div class="modal-backdrop" data-close="share-modal"></div>
+    <div class="modal-panel modal-center modal-md share-panel">
+      <div class="modal-header">
+        <span class="modal-title">分享卡片</span>
+        <button class="modal-close-btn" data-close="share-modal">×</button>
+      </div>
+      <div class="modal-body share-body">
+        <div class="share-scope-tabs" role="tablist" data-scope="day">
+          <span class="share-scope-thumb" aria-hidden="true"></span>
+          <button class="share-tab active" data-scope="day" role="tab">今日</button>
+          <button class="share-tab" data-scope="week" role="tab">本周</button>
+        </div>
+        <button type="button" class="share-preview-wrapper" id="share-preview-trigger"
+                aria-label="点击放大预览">
+          <canvas id="share-canvas" width="720" height="960"></canvas>
+          <div class="share-loading hidden" id="share-loading">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+              <circle cx="12" cy="12" r="10" opacity="0.2"></circle>
+              <path d="M12 2a10 10 0 0 1 10 10"></path>
+            </svg>
+            <span>生成中…</span>
+          </div>
+          <span class="share-preview-zoom-hint" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 9V3h6"></path><path d="M21 9V3h-6"></path>
+              <path d="M3 15v6h6"></path><path d="M21 15v6h-6"></path>
+            </svg>
+            放大
+          </span>
+        </button>
+      </div>
+      <div class="modal-footer">
+        <button id="share-refresh-btn">换一张</button>
+        <button id="share-save-btn" class="primary">保存到桌面</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分享卡片放大预览层 -->
+  <div id="share-lightbox" class="share-lightbox hidden" aria-hidden="true">
+    <div class="share-lightbox-backdrop" data-close="share-lightbox"></div>
+    <div class="share-lightbox-stage" id="share-lightbox-stage">
+      <img id="share-lightbox-img" class="share-lightbox-img" alt="分享卡片预览" draggable="false" />
+    </div>
+    <div class="share-lightbox-toolbar" role="toolbar" aria-label="预览缩放">
+      <button class="share-lb-btn" id="share-lb-zoom-out" title="缩小 (−)" aria-label="缩小">−</button>
+      <button class="share-lb-btn share-lb-reset" id="share-lb-reset" title="重置 (0)">
+        <span id="share-lb-percent">100%</span>
+      </button>
+      <button class="share-lb-btn" id="share-lb-zoom-in" title="放大 (+)" aria-label="放大">+</button>
+      <span class="share-lb-sep"></span>
+      <button class="share-lb-btn" id="share-lb-close" title="关闭 (Esc)" aria-label="关闭">✕</button>
     </div>
   </div>
 

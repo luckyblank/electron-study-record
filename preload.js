@@ -91,6 +91,12 @@ contextBridge.exposeInMainWorld('studyRecord', {
   exportData: (format) =>
     withTimeout(ipcRenderer.invoke('data:export', format), 30000, 'exportData'),
 
+  // ===== 分享卡片 =====
+  shareGetSummary: (opts) =>
+    withTimeout(ipcRenderer.invoke('share:get-summary', opts || {}), 5000, 'shareGetSummary'),
+  shareSaveImage: (opts) =>
+    withTimeout(ipcRenderer.invoke('share:save-image', opts), 10000, 'shareSaveImage'),
+
   // ===== 通知 =====
   notify: (opts) =>
     withTimeout(ipcRenderer.invoke('app:notify', opts), 3000, 'notify'),

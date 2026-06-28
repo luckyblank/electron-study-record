@@ -645,18 +645,27 @@ function calculateMaxStreakFromDays(days) {
 
 async function getStudyStatDays() {
   const timeRange = await getTimeRange()
-  const rows = await getEndedSessionRows()
+  // 包含进行中的会话:end_time 为空时用 "现在" 当作结束时刻,只用于"是否打卡"判定
+  // 不影响实际记录,纯粹是为了让用户当天点了开始就能计入连续天数
+  const rows = await getAll(
+    `SELECT start_time, end_time, COALESCE(paused_duration, 0) AS paused_duration, paused_at
+     FROM study_sessions`
+  )
+  const nowStr = toMainChinaTimeString(new Date())
   const days = new Set()
 
   rows.forEach(row => {
-    const start = parseDbTime(row.start_time)
-    const end = parseDbTime(row.end_time)
+    const effectiveRow = row.end_time
+      ? row
+      : { ...row, end_time: nowStr, paused_duration: estimatePausedDurationForOngoing(row) }
+    const start = parseDbTime(effectiveRow.start_time)
+    const end = parseDbTime(effectiveRow.end_time)
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return
 
     let bounds = computeRangeBounds(start, timeRange)
     let guard = 0
     while (bounds.start < end && guard < 5000) {
-      if (getSessionSecondsInBounds(row, bounds) > 0) {
+      if (getSessionSecondsInBounds(effectiveRow, bounds) > 0) {
         days.add(formatLocalDateKey(bounds.start))
       }
       bounds = getNextRangeBounds(bounds)
@@ -665,6 +674,27 @@ async function getStudyStatDays() {
   })
 
   return [...days].sort()
+}
+
+// 进行中会话的暂停时长估算:如果当前处于暂停状态,补上"暂停起点 → 现在"这段
+function estimatePausedDurationForOngoing(row) {
+  let pausedDuration = parseInt(row.paused_duration, 10) || 0
+  if (row.paused_at) {
+    const pausedStart = parseDbTime(row.paused_at)
+    if (!Number.isNaN(pausedStart.getTime())) {
+      pausedDuration += Math.max(0, Math.floor((new Date() - pausedStart) / 1000))
+    }
+  }
+  return pausedDuration
+}
+
+// 将 Date 转为 "YYYY-MM-DD HH:mm:ss" 中国时间(主进程版本,renderer 也有同名实现)
+function toMainChinaTimeString(date = new Date()) {
+  const chinaOffset = 8 * 60 * 60 * 1000
+  const t = new Date(date.getTime() + chinaOffset)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())} ` +
+         `${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}:${pad(t.getUTCSeconds())}`
 }
 
 async function hasStatDayAtLeastSeconds(targetSeconds) {
@@ -1395,22 +1425,149 @@ ipcMain.handle('data:export', async (event, format) => {
   return { success: true, path: result.filePath, count: sessions.length }
 })
 
+// =============== IPC: 分享卡片 ===============
+// 渲染端用 canvas 画卡片,主进程负责提供数据 + 落盘 + 让用户选保存位置
+ipcMain.handle('share:get-summary', async (_event, { scope = 'day', dayOffset = 0 } = {}) => {
+  const timeRange = await getTimeRange()
+  const now = new Date()
+
+  let bounds
+  if (scope === 'week') {
+    // 周:从今日往前 6 天 → 共 7 天
+    const today = computeRangeBoundsForOffset(now, timeRange, 0)
+    const start = new Date(today.start)
+    start.setDate(start.getDate() - 6)
+    bounds = { start, end: today.end }
+  } else {
+    bounds = computeRangeBoundsForOffset(now, timeRange, -Math.abs(dayOffset))
+  }
+
+  // 拉所有 session(含标签),复用 getAllSessions 的查询
+  const rows = await getAll(`SELECT s.*, GROUP_CONCAT(t.name) AS tag_names, GROUP_CONCAT(t.color) AS tag_colors
+    FROM study_sessions s
+    LEFT JOIN session_tags st ON st.session_id = s.id
+    LEFT JOIN study_tags t ON t.id = st.tag_id
+    WHERE s.end_time IS NOT NULL
+    GROUP BY s.id`)
+
+  let totalSeconds = 0
+  let sessionCount = 0
+  const tagStats = new Map()  // name -> { seconds, color }
+
+  rows.forEach(r => {
+    const secs = getSessionSecondsInBounds(r, bounds)
+    if (secs <= 0) return
+    totalSeconds += secs
+    sessionCount += 1
+    if (r.tag_names) {
+      const names = r.tag_names.split(',')
+      const colors = (r.tag_colors || '').split(',')
+      names.forEach((name, i) => {
+        const prev = tagStats.get(name) || { seconds: 0, color: colors[i] || '#7e9fff' }
+        // 同一 session 多个标签会被多次计入 -> 简化版:按比例均分
+        prev.seconds += Math.floor(secs / names.length)
+        tagStats.set(name, prev)
+      })
+    }
+  })
+
+  // 周分布:每天总秒数(用于柱状图)
+  const dayBuckets = []
+  if (scope === 'week') {
+    for (let i = 6; i >= 0; i--) {
+      const b = computeRangeBoundsForOffset(now, timeRange, -i)
+      let secs = 0
+      rows.forEach(r => { secs += getSessionSecondsInBounds(r, b) })
+      const d = b.start
+      dayBuckets.push({
+        label: `${d.getMonth() + 1}/${d.getDate()}`,
+        seconds: secs,
+        weekday: ['日','一','二','三','四','五','六'][d.getDay()]
+      })
+    }
+  }
+
+  // 一句寄语
+  let quote = ''
+  if (words && words.length) {
+    quote = words[Math.floor(Math.random() * words.length)]
+  }
+
+  // 连续天数
+  let streak = 0
+  try { streak = await getCurrentStreak() } catch (e) {}
+
+  const tags = [...tagStats.entries()]
+    .map(([name, v]) => ({ name, color: v.color, seconds: v.seconds }))
+    .sort((a, b) => b.seconds - a.seconds)
+    .slice(0, 6)
+
+  return {
+    scope,
+    totalSeconds,
+    sessionCount,
+    streak,
+    tags,
+    dayBuckets,
+    quote,
+    rangeLabel: scope === 'week'
+      ? `${formatLocalDateKey(bounds.start)} ~ ${formatLocalDateKey(new Date(bounds.end.getTime() - 1))}`
+      : formatLocalDateKey(bounds.start)
+  }
+})
+
+// 接收 base64 PNG,保存到桌面(或让用户选择路径)
+ipcMain.handle('share:save-image', async (event, { dataUrl, defaultName = 'study-share.png' } = {}) => {
+  if (!dataUrl || typeof dataUrl !== 'string') {
+    return { success: false, error: '图片数据为空' }
+  }
+  const m = /^data:image\/png;base64,(.+)$/.exec(dataUrl)
+  if (!m) return { success: false, error: '图片格式不支持' }
+  const buf = Buffer.from(m[1], 'base64')
+
+  // 直接保存到桌面,文件名带时间戳避免覆盖
+  const desktop = app.getPath('desktop')
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19)
+  const safeName = defaultName.replace(/\.png$/, '') + '_' + stamp + '.png'
+  const target = path.join(desktop, safeName)
+  try {
+    fs.writeFileSync(target, buf)
+    return { success: true, path: target }
+  } catch (e) {
+    // 桌面写入失败时回退到 Save As 对话框
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const fallback = await dialog.showSaveDialog(win, {
+      title: '保存分享卡片',
+      defaultPath: safeName,
+      filters: [{ name: 'PNG', extensions: ['png'] }]
+    })
+    if (fallback.canceled || !fallback.filePath) return { success: false, canceled: true }
+    fs.writeFileSync(fallback.filePath, buf)
+    return { success: true, path: fallback.filePath }
+  }
+})
+
 // =============== IPC: 应用元信息 ===============
 ipcMain.handle('app:get-version', () => app.getVersion())
 
 // =============== IPC: 通知 ===============
 ipcMain.handle('app:notify', (event, opts = {}) => {
   try {
+    if (typeof Notification !== 'function' || !Notification.isSupported()) {
+      log.warn('[Notify] 系统不支持原生通知')
+      return false
+    }
     const notif = new Notification({
       title: opts.title || '学习时间记录',
       body: opts.body || '',
       silent: !!opts.silent,
       icon: path.join(__dirname, 'logo.ico')
     })
+    notif.on('failed', (e, err) => log.warn('[Notify] failed:', err))
     notif.show()
     return true
   } catch (e) {
-    console.error('系统通知失败:', e.message)
+    log.error('[Notify] 弹出失败:', e && e.message)
     return false
   }
 })
@@ -1439,6 +1596,12 @@ app.on('before-quit', () => {
 
 app.whenReady().then(async () => {
   try {
+    // Windows 通知必须设置 AppUserModelId,否则系统会把 Notification 当作
+    // electron.exe 自身的通知 → Action Center 可能直接静默丢弃
+    // 必须与 package.json 中 build.appId 完全一致
+    if (process.platform === 'win32') {
+      app.setAppUserModelId('com.luckyblank.studytimer')
+    }
     await initDatabase()
     await loadWordsFromDB()
     createWindow()

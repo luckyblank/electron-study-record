@@ -22,20 +22,38 @@ const PET_META = {
     id: 'cat',
     name: '学霸猫',
     accent: 'var(--accent)',
-    unlockHint: '默认伙伴，陪你从第一分钟开始。'
+    unlockHint: '默认伙伴，陪你从第一分钟开始。',
+    stageNames: ['初生奶猫', '机敏花猫', '博学虎斑', '玄学神猫']
   },
   dog: {
     id: 'dog',
     name: '努力汪',
     accent: 'var(--success)',
-    unlockHint: '累计学习 10 小时，或连续学习 7 天。'
+    unlockHint: '累计学习 10 小时，或连续学习 7 天。',
+    stageNames: ['好奇幼犬', '勤奋牧犬', '机警柴犬', '智勇双全']
   },
   owl: {
     id: 'owl',
     name: '智慧鸮',
     accent: 'var(--warning)',
-    unlockHint: '获得 5 个徽章，或累计学习 50 小时。'
+    unlockHint: '获得 5 个徽章，或累计学习 50 小时。',
+    stageNames: ['毛茸幼鸮', '夜读雏鸮', '深思学者', '通晓贤者']
   }
+}
+
+// 进化阶段:Lv 1-9 / 10-29 / 30-49 / 50+
+const PET_STAGE_THRESHOLDS = [1, 10, 30, 50]
+function getPetStage(level) {
+  const lv = Math.max(1, parseInt(level, 10) || 1)
+  if (lv >= 50) return 3
+  if (lv >= 30) return 2
+  if (lv >= 10) return 1
+  return 0
+}
+function getNextStageInfo(level) {
+  const stage = getPetStage(level)
+  if (stage >= 3) return { nextLevel: null, currentStage: stage }
+  return { nextLevel: PET_STAGE_THRESHOLDS[stage + 1], currentStage: stage }
 }
 
 // ---------- 状态 ----------
@@ -367,12 +385,21 @@ async function maybeNotifyHourly(todaySeconds) {
   try {
     const count = Math.floor(todaySeconds / TWO_HOURS_SECONDS)
     if (count <= 0) return
-    const d = new Date()
-    const todayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    // 用主进程统计区间的 start 作为 "统计日 key",而非自然日
+    // 否则统计区间是 05:00-05:00 时,凌晨 0:00-5:00 学习会被自然日切换误判
+    let statKey
+    try {
+      const bounds = await window.studyRecord.statsTodayBoundaries()
+      const start = new Date(bounds.start)
+      statKey = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`
+    } catch (e) {
+      const d = new Date()
+      statKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
     const raw = await window.studyRecord.getConfig('notified_over_2h_state')
-    let state = { date: todayKey, count: 0 }
+    let state = { date: statKey, count: 0 }
     if (raw) { try { state = JSON.parse(raw) } catch (e) {} }
-    if (state.date !== todayKey) state = { date: todayKey, count: 0 }
+    if (state.date !== statKey) state = { date: statKey, count: 0 }
 
     if (count > state.count) {
       showToast(`已学习超 ${count * 2} 小时啦，请休息一会哦~`, 'info', 6000, true)
@@ -1868,35 +1895,135 @@ function normalizeRendererPetState(state) {
   return next
 }
 
-function renderPetSvg(petId) {
+function renderPetSvg(petId, stage = 0) {
+  const s = Math.max(0, Math.min(3, stage | 0))
   const colors = {
-    cat: { body: 'var(--warning)', body2: 'color-mix(in srgb, var(--warning) 78%, var(--accent) 22%)', ear: 'color-mix(in srgb, var(--warning) 32%, #fff)', mark: 'color-mix(in srgb, var(--warning) 48%, #111)' },
-    dog: { body: 'var(--success)', body2: 'color-mix(in srgb, var(--success) 76%, var(--text-primary) 10%)', ear: 'color-mix(in srgb, var(--success) 42%, var(--text-primary) 12%)', mark: 'color-mix(in srgb, var(--success) 36%, #111)' },
-    owl: { body: 'var(--accent-2)', body2: 'var(--accent)', ear: 'color-mix(in srgb, var(--accent-2) 30%, #fff)', mark: 'color-mix(in srgb, var(--accent) 42%, #111)' }
-  }[petId] || { body: 'var(--accent)', body2: 'var(--accent-2)', ear: 'var(--accent-soft)', mark: 'var(--text-secondary)' }
-  const catFeatures = petId === 'cat' ? '<path d="M18 22 12 12l13 5" fill="' + colors.body + '"/><path d="M46 22 52 12l-13 5" fill="' + colors.body + '"/><path class="pet-tail" d="M48 42c10 0 10 10 2 11" fill="none" stroke="' + colors.body2 + '" stroke-width="5" stroke-linecap="round"/>' : ''
-  const dogFeatures = petId === 'dog' ? '<path d="M18 22c-7 2-8 12-2 16" fill="' + colors.ear + '"/><path d="M46 22c7 2 8 12 2 16" fill="' + colors.ear + '"/><path class="pet-tail" d="M48 44c8 2 10-4 6-8" fill="none" stroke="' + colors.body2 + '" stroke-width="5" stroke-linecap="round"/>' : ''
-  const owlFeatures = petId === 'owl' ? '<path d="M18 20 16 11l9 7" fill="' + colors.ear + '"/><path d="M46 20 48 11l-9 7" fill="' + colors.ear + '"/><path d="M24 39c4 3 12 3 16 0" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2" stroke-linecap="round"/>' : ''
-  const nose = petId === 'owl'
-    ? '<path d="M32 32l-3 5h6z" fill="#f2b84b"/>'
-    : '<path d="M32 34l-3 3h6z" fill="' + colors.mark + '"/>'
+    cat: {
+      body: 'var(--warning)',
+      body2: 'color-mix(in srgb, var(--warning) 72%, #e87830)',
+      ear: 'color-mix(in srgb, var(--warning) 55%, #f5d0a0)',
+      mark: '#5c3826',
+      eye: '#3a2a18',
+      nose: '#e87890'
+    },
+    dog: {
+      body: 'color-mix(in srgb, var(--success) 72%, #e8c97a)',
+      body2: 'var(--success)',
+      ear: 'color-mix(in srgb, var(--success) 48%, #8b6914)',
+      mark: '#4a3520',
+      eye: '#2e2210',
+      nose: '#3a2818'
+    },
+    owl: {
+      body: 'var(--accent-2)',
+      body2: 'var(--accent)',
+      ear: 'color-mix(in srgb, var(--accent-2) 30%, #fff)',
+      mark: '#1a2740',
+      eye: '#1a2440',
+      nose: '#f2b84b'
+    }
+  }[petId] || { body: 'var(--accent)', body2: 'var(--accent-2)', ear: 'var(--accent-soft)', mark: '#333', eye: '#222', nose: '#f2b84b' }
 
-  return `<svg class="pet-svg" viewBox="0 0 64 64" aria-hidden="true">
-    <ellipse cx="32" cy="52" rx="19" ry="5" fill="rgba(20,40,80,.10)"></ellipse>
-    <g class="pet-body-group">
-      ${catFeatures}${dogFeatures}${owlFeatures}
-      <ellipse cx="32" cy="39" rx="18" ry="17" fill="${colors.body2}"></ellipse>
-      <circle cx="32" cy="28" r="18" fill="${colors.body}"></circle>
-      <ellipse cx="25" cy="29" rx="7" ry="7.5" fill="rgba(255,255,255,.58)"></ellipse>
-      <ellipse cx="39" cy="29" rx="7" ry="7.5" fill="rgba(255,255,255,.58)"></ellipse>
-      <g class="pet-eyes-open">
-        <circle cx="25" cy="29" r="2.2" fill="#1a1f36"></circle>
-        <circle cx="39" cy="29" r="2.2" fill="#1a1f36"></circle>
-      </g>
-      ${nose}
-      <path d="M26 40c3.4 2.8 8.6 2.8 12 0" fill="none" stroke="${colors.mark}" stroke-width="2.2" stroke-linecap="round"></path>
-      <circle cx="20" cy="35" r="2.4" fill="rgba(255,255,255,.34)"></circle>
-      <circle cx="44" cy="35" r="2.4" fill="rgba(255,255,255,.34)"></circle>
+  // ---- 猫：尖耳 + 胡须 + 俏皮眼 + 三瓣嘴 + 弯尾 ----
+  const catParts = petId === 'cat' ? `
+    <path d="M16 24 8 8l10 10" fill="${colors.ear}"></path>
+    <path d="M48 24 56 8 46 18" fill="${colors.ear}"></path>
+    <path d="M16 24 12 14l6 5" fill="color-mix(in srgb, ${colors.mark} 24%, ${colors.ear})" opacity=".55"></path>
+    <path d="M48 24 52 14l-6 5" fill="color-mix(in srgb, ${colors.mark} 24%, ${colors.ear})" opacity=".55"></path>
+    <line x1="10" y1="33" x2="22" y2="35" stroke="${colors.mark}" stroke-width="0.9" opacity=".5" stroke-linecap="round"></line>
+    <line x1="10" y1="37" x2="22" y2="37" stroke="${colors.mark}" stroke-width="0.9" opacity=".5" stroke-linecap="round"></line>
+    <line x1="54" y1="33" x2="42" y2="35" stroke="${colors.mark}" stroke-width="0.9" opacity=".5" stroke-linecap="round"></line>
+    <line x1="54" y1="37" x2="42" y2="37" stroke="${colors.mark}" stroke-width="0.9" opacity=".5" stroke-linecap="round"></line>
+    <path class="pet-tail" d="M48 44c8 0 14-8 6-14" fill="none" stroke="${colors.body2}" stroke-width="5" stroke-linecap="round"></path>
+  ` : ''
+
+  // ---- 狗：垂耳 + 圆鼻 + 吐舌 + 蓬松脸颊 ----
+  const dogParts = petId === 'dog' ? `
+    <ellipse cx="14" cy="22" rx="7" ry="10" fill="${colors.ear}" transform="rotate(18 14 22)"></ellipse>
+    <ellipse cx="50" cy="22" rx="7" ry="10" fill="${colors.ear}" transform="rotate(-18 50 22)"></ellipse>
+    <ellipse cx="20" cy="32" rx="6" ry="5" fill="color-mix(in srgb, ${colors.ear} 40%, #fff)" opacity=".6"></ellipse>
+    <ellipse cx="44" cy="32" rx="6" ry="5" fill="color-mix(in srgb, ${colors.ear} 40%, #fff)" opacity=".6"></ellipse>
+    <ellipse cx="32" cy="36" rx="3.8" ry="2.8" fill="${colors.nose}"></ellipse>
+    <ellipse cx="30.5" cy="35.2" rx="1.2" ry="0.9" fill="rgba(255,255,255,.45)"></ellipse>
+    <path d="M29 39.5c0 3 3 6 6 6s6-3 6-6" fill="#f27a8a"></path>
+    <path d="M30.5 39.5v2" stroke="${colors.mark}" stroke-width="0.8" stroke-linecap="round"></path>
+    <path class="pet-tail" d="M46 44c6 3 12-4 8-9" fill="none" stroke="${colors.body2}" stroke-width="5" stroke-linecap="round"></path>
+  ` : ''
+
+  // ---- 猫头鹰：大圆眼 + 喙 + 羽冠 + 翅膀 + 爪 ----
+  const owlParts = petId === 'owl' ? `
+    <path d="M18 26 12 8l8 12" fill="${colors.ear}"></path>
+    <path d="M46 26 52 8l-8 12" fill="${colors.ear}"></path>
+    <path d="M14 8 16 12" stroke="${colors.mark}" stroke-width="1.2" stroke-linecap="round" opacity=".4"></path>
+    <path d="M18 6 19 10" stroke="${colors.mark}" stroke-width="1.2" stroke-linecap="round" opacity=".4"></path>
+    <path d="M50 8 48 12" stroke="${colors.mark}" stroke-width="1.2" stroke-linecap="round" opacity=".4"></path>
+    <path d="M46 6 45 10" stroke="${colors.mark}" stroke-width="1.2" stroke-linecap="round" opacity=".4"></path>
+    <ellipse cx="25" cy="30" rx="8" ry="9" fill="#fff"></ellipse>
+    <ellipse cx="39" cy="30" rx="8" ry="9" fill="#fff"></ellipse>
+    <circle cx="26" cy="30" r="4.5" fill="${colors.eye}"></circle>
+    <circle cx="38" cy="30" r="4.5" fill="${colors.eye}"></circle>
+    <circle cx="27.5" cy="27.5" r="1.6" fill="rgba(255,255,255,.7)"></circle>
+    <circle cx="39.5" cy="27.5" r="1.6" fill="rgba(255,255,255,.7)"></circle>
+    <circle cx="24.5" cy="31.5" r="0.8" fill="rgba(255,255,255,.4)"></circle>
+    <circle cx="36.5" cy="31.5" r="0.8" fill="rgba(255,255,255,.4)"></circle>
+    <polygon points="32,36 28,42 36,42" fill="${colors.nose}"></polygon>
+    <path d="M18 44c0-8 4-14 14-10" fill="${colors.body2}" opacity=".7"></path>
+    <path d="M46 44c0-8-4-14-14-10" fill="${colors.body2}" opacity=".7"></path>
+    <path d="M28 53h2l-1 3-1-3" fill="${colors.nose}"></path>
+    <path d="M34 53h2l-1 3-1-3" fill="${colors.nose}"></path>
+  ` : ''
+
+  // ---- 进化装饰 ----
+  const blush = s >= 1
+    ? `<circle cx="20" cy="34" r="2.4" fill="#ff8aa6" opacity=".45"></circle><circle cx="44" cy="34" r="2.4" fill="#ff8aa6" opacity=".45"></circle>`
+    : ''
+  const glasses = s >= 2
+    ? `<g class="pet-glasses">
+        <circle cx="25" cy="29" r="5" fill="none" stroke="${colors.mark}" stroke-width="1.6"></circle>
+        <circle cx="39" cy="29" r="5" fill="none" stroke="${colors.mark}" stroke-width="1.6"></circle>
+        <line x1="30" y1="29" x2="34" y2="29" stroke="${colors.mark}" stroke-width="1.6"></line>
+      </g>` : ''
+  const cap = s >= 3
+    ? `<g class="pet-cap">
+        <rect x="14" y="6" width="36" height="3.6" fill="#1f2745"></rect>
+        <polygon points="12,8 52,8 32,1" fill="#283153"></polygon>
+        <circle cx="46" cy="5" r="2" fill="${colors.body}"></circle>
+        <line x1="46" y1="5" x2="50" y2="10" stroke="#1f2745" stroke-width="1.5"></line>
+      </g>` : ''
+  const halo = s >= 3
+    ? `<ellipse cx="32" cy="2" rx="14" ry="2.4" fill="none" stroke="#f3c948" stroke-width="2" opacity=".85"></ellipse>`
+    : ''
+
+  // s=0 幼年:缩小
+  const scaleAttr = s === 0 ? ' transform="translate(32 38) scale(0.82) translate(-32 -38)"' : ''
+
+  // 不同宠物的脸型微调
+  const faceRx = petId === 'owl' ? 16 : 18
+  const faceRy = petId === 'owl' ? 14 : 17
+
+  return `<svg class="pet-svg pet-stage-${s}" viewBox="0 0 64 64" aria-hidden="true">
+    <ellipse cx="32" cy="54" rx="20" ry="4.5" fill="rgba(20,40,80,.12)"></ellipse>
+    <g class="pet-body-group"${scaleAttr}>
+      ${halo}
+      ${cap}
+      ${catParts}${dogParts}${owlParts}
+      <ellipse cx="32" cy="40" rx="20" ry="16" fill="${colors.body2}"></ellipse>
+      <ellipse cx="32" cy="28" rx="${faceRx}" ry="${faceRy}" fill="${colors.body}"></ellipse>
+      ${petId !== 'owl' ? `
+        <ellipse cx="25" cy="28" rx="6.5" ry="7" fill="rgba(255,255,255,.52)"></ellipse>
+        <ellipse cx="39" cy="28" rx="6.5" ry="7" fill="rgba(255,255,255,.52)"></ellipse>
+        <g class="pet-eyes-open">
+          <ellipse cx="25" cy="28" rx="2.8" ry="3.2" fill="${colors.eye}"></ellipse>
+          <ellipse cx="39" cy="28" rx="2.8" ry="3.2" fill="${colors.eye}"></ellipse>
+          <circle cx="26.4" cy="26" r="1" fill="rgba(255,255,255,.55)"></circle>
+          <circle cx="40.4" cy="26" r="1" fill="rgba(255,255,255,.55)"></circle>
+        </g>
+      ` : ''}
+      ${blush}
+      ${glasses}
+      ${petId !== 'owl' ? `
+        <path d="M26 38c3.4 3 8.6 3 12 0" fill="none" stroke="${colors.mark}" stroke-width="2" stroke-linecap="round"></path>
+      ` : ''}
     </g>
   </svg>`
 }
@@ -1955,10 +2082,13 @@ class PetManager {
     if (!this.petState) return
     const activeId = this.petState.activePetId || 'cat'
     const visual = document.getElementById('pet-visual')
+    const pet = this.activePet
+    const stage = getPetStage(pet.level)
     if (visual) {
-      visual.innerHTML = renderPetSvg(activeId)
+      visual.innerHTML = renderPetSvg(activeId, stage)
       visual.dataset.state = this.state
-      visual.title = `${PET_META[activeId].name} · 点击互动`
+      visual.dataset.stage = String(stage)
+      visual.title = `${PET_META[activeId].name} · ${PET_META[activeId].stageNames[stage]} · 点击互动`
     }
     this.updateStatsUI()
     this.updateExpUI()
@@ -2067,6 +2197,7 @@ class PetManager {
   async addExp(amount, seconds = 0) {
     if (!this.petState || amount <= 0) return false
     const pet = this.activePet
+    const prevStage = getPetStage(pet.level)
     pet.exp = (pet.exp || 0) + amount
     pet.totalStudyTime = (pet.totalStudyTime || 0) + Math.max(0, seconds)
     pet.mood = clampNumber((pet.mood || 80) + Math.min(12, amount / 8), 0, 100)
@@ -2078,11 +2209,36 @@ class PetManager {
       pet.level = (pet.level || 1) + 1
       didLevelUp = true
     }
+    const newStage = getPetStage(pet.level)
+    const didEvolve = newStage > prevStage
     this.updateStatsUI()
     this.updateExpUI()
+    if (didEvolve) {
+      // 重新渲染整只宠物(切换 stage 的装饰)
+      this.render()
+    }
     await this.save()
     if (didLevelUp) showToast(`宠物升级到 Lv.${pet.level}`, 'success', 2600)
+    if (didEvolve) {
+      const petId = this.petState.activePetId || 'cat'
+      const stageName = PET_META[petId].stageNames[newStage]
+      setTimeout(() => {
+        this.showEvolutionToast(petId, prevStage, newStage)
+        showToast(`✨ 进化为「${stageName}」!`, 'success', 4000)
+      }, didLevelUp ? 1200 : 0)
+    }
     return didLevelUp
+  }
+
+  showEvolutionToast(petId, prevStage, newStage) {
+    // 全屏中央炫光特效
+    const visual = document.getElementById('pet-visual')
+    if (!visual) return
+    visual.classList.remove('is-evolving')
+    void visual.offsetWidth
+    visual.classList.add('is-evolving')
+    this.spawnParticles(['✦', '★', '◆', '✧'], 18)
+    setTimeout(() => visual.classList.remove('is-evolving'), 2400)
   }
 
   async onPetClick() {
@@ -2157,22 +2313,98 @@ class PetManager {
     const root = document.getElementById('pet-collection')
     const meta = document.getElementById('pet-modal-meta')
     if (!root || !this.petState) return
-    const unlockedCount = Object.keys(PET_META).filter(id => this.petState.unlockedPets.includes(id)).length
-    if (meta) meta.textContent = `${unlockedCount}/${Object.keys(PET_META).length} 已解锁`
-    root.innerHTML = Object.values(PET_META).map(pet => {
+    const allPets = Object.values(PET_META)
+    const unlockedCount = allPets.filter(p => this.petState.unlockedPets.includes(p.id)).length
+    if (meta) meta.textContent = `${unlockedCount}/${allPets.length} 已解锁`
+
+    const activeId = this.petState.activePetId
+    const activeMeta = PET_META[activeId] || allPets[0]
+    const activeRecord = this.petState.pets[activeMeta.id] || createDefaultPetRecord()
+    const activeStage = getPetStage(activeRecord.level)
+    const activeStageName = activeMeta.stageNames[activeStage]
+    const stageInfo = getNextStageInfo(activeRecord.level)
+    const currentLv = activeRecord.level || 1
+    const expNeed = getLevelNeed(currentLv)
+    const expPct = clampNumber((activeRecord.exp || 0) / expNeed * 100, 0, 100)
+    const nextStageLabel = stageInfo.nextLevel
+      ? `距 Lv.${stageInfo.nextLevel} 进化还差 ${stageInfo.nextLevel - currentLv} 级`
+      : '已达最终形态'
+
+    const evolutionTree = `
+      <div class="pet-evolution-tree" aria-label="进化路径">
+        ${activeMeta.stageNames.map((sName, idx) => {
+          const reached = activeStage >= idx
+          const isCurrent = activeStage === idx
+          const threshold = PET_STAGE_THRESHOLDS[idx]
+          return `
+            <div class="pet-evo-step ${reached ? 'reached' : ''} ${isCurrent ? 'current' : ''}" title="${escapeHtml(sName)} · Lv.${threshold}+">
+              <div class="pet-evo-avatar">${renderPetSvg(activeMeta.id, idx)}</div>
+              <div class="pet-evo-meta">
+                <span class="pet-evo-name">${escapeHtml(sName)}</span>
+                <span class="pet-evo-lv">Lv.${threshold}+</span>
+              </div>
+            </div>
+            ${idx < activeMeta.stageNames.length - 1 ? '<span class="pet-evo-arrow">›</span>' : ''}
+          `
+        }).join('')}
+      </div>
+    `
+
+    const hero = `
+      <section class="pet-hero">
+        <div class="pet-hero-top">
+          <div class="pet-hero-avatar">${renderPetSvg(activeMeta.id, activeStage)}</div>
+          <div class="pet-hero-info">
+            <div class="pet-hero-name">
+              ${escapeHtml(activeMeta.name)}
+              <span class="pet-hero-stage">${escapeHtml(activeStageName)}</span>
+            </div>
+            <div class="pet-hero-lv">Lv.${currentLv}</div>
+            <div class="pet-hero-next">${escapeHtml(nextStageLabel)}</div>
+          </div>
+        </div>
+        <div class="pet-hero-exp" aria-label="经验进度">
+          <div class="pet-hero-exp-fill" style="width:${expPct}%"></div>
+          <span class="pet-hero-exp-text">${activeRecord.exp || 0} / ${expNeed} EXP</span>
+        </div>
+        ${evolutionTree}
+      </section>
+    `
+
+    const listRows = allPets.map(pet => {
       const unlocked = this.petState.unlockedPets.includes(pet.id)
-      const active = this.petState.activePetId === pet.id
+      const isActive = pet.id === activeMeta.id
       const record = this.petState.pets[pet.id] || createDefaultPetRecord()
-      return `<button class="pet-card ${active ? 'active' : ''} ${unlocked ? '' : 'locked'}" data-pet-id="${pet.id}" ${unlocked ? '' : 'disabled'}>
-        <div class="pet-card-visual">${renderPetSvg(pet.id)}</div>
-        <div class="pet-card-name">${escapeHtml(pet.name)}</div>
-        <div class="pet-card-desc">${unlocked ? `Lv.${record.level || 1} · ${record.affection || 0} 亲密` : escapeHtml(pet.unlockHint)}</div>
-        <div class="pet-card-status">${active ? '当前伙伴' : unlocked ? '切换' : '未解锁'}</div>
-      </button>`
+      const stage = unlocked ? getPetStage(record.level) : 0
+      const stageName = unlocked ? pet.stageNames[stage] : ''
+      const subtitle = unlocked
+        ? `Lv.${record.level || 1} · ${stageName}`
+        : pet.unlockHint
+      const statusLabel = isActive ? '当前' : unlocked ? '切换' : '未解锁'
+      const statusClass = isActive ? 'is-active' : unlocked ? 'is-switch' : 'is-locked'
+      const disabled = !unlocked || isActive
+      return `
+        <button class="pet-row ${isActive ? 'active' : ''} ${unlocked ? '' : 'locked'}"
+                data-pet-id="${pet.id}" ${disabled ? 'disabled' : ''}>
+          <div class="pet-row-avatar">${renderPetSvg(pet.id, stage)}</div>
+          <div class="pet-row-info">
+            <div class="pet-row-name">${escapeHtml(pet.name)}</div>
+            <div class="pet-row-sub">${escapeHtml(subtitle)}</div>
+          </div>
+          <span class="pet-row-status ${statusClass}">${statusLabel}</span>
+        </button>
+      `
     }).join('')
-    root.querySelectorAll('.pet-card:not(.locked)').forEach(card => {
-      card.addEventListener('click', async () => {
-        await this.switchPet(card.dataset.petId)
+
+    root.innerHTML = `
+      ${hero}
+      <div class="pet-switcher-label">切换伙伴</div>
+      <div class="pet-switcher">${listRows}</div>
+    `
+
+    root.querySelectorAll('.pet-row:not(.locked):not(.active)').forEach(row => {
+      row.addEventListener('click', async () => {
+        await this.switchPet(row.dataset.petId)
         await this.renderCollection()
       })
     })
@@ -2210,6 +2442,525 @@ async function doExport(format) {
   } catch (e) {
     showMessage('导出出错：' + e.message)
   }
+}
+
+// ---------- 分享卡片 ----------
+const shareCardManager = (() => {
+  let currentScope = 'day'
+  let currentSummary = null
+
+  function fmtH(sec) {
+    if (!sec || sec < 0) return '0h'
+    const h = Math.floor(sec / 3600)
+    const m = Math.floor((sec % 3600) / 60)
+    if (h && m) return `${h}h ${m}m`
+    if (h) return `${h}h`
+    return `${m}m`
+  }
+
+  // 主题色:跟随当前主题
+  function getTheme() {
+    const t = document.body.getAttribute('data-theme') || 'light'
+    if (t === 'dark') {
+      return {
+        bgGrad: ['#1c2238', '#252c4a'],
+        accent: '#82a0ff', accent2: '#b48aff',
+        text: '#e4eaf7', textSoft: '#a0a8c2',
+        card: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.08)',
+        success: '#38d196'
+      }
+    }
+    if (t === 'eyecare') {
+      return {
+        bgGrad: ['#e4f1de', '#cfe2c6'],
+        accent: '#5a8a4f', accent2: '#7aa66e',
+        text: '#263822', textSoft: '#4a5e44',
+        card: 'rgba(255,255,255,0.6)', border: 'rgba(80,110,70,0.14)',
+        success: '#5a8a4f'
+      }
+    }
+    return {
+      bgGrad: ['#f2f5fc', '#e8ecf8'],
+      accent: '#6a84e6', accent2: '#936ae6',
+      text: '#1a1f36', textSoft: '#5e6480',
+      card: 'rgba(255,255,255,0.85)', border: 'rgba(130,150,190,0.16)',
+      success: '#38b978'
+    }
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.arcTo(x + w, y, x + w, y + h, r)
+    ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r)
+    ctx.arcTo(x, y, x + w, y, r)
+    ctx.closePath()
+  }
+
+function drawCard(canvas, summary) {
+    const ctx = canvas.getContext('2d')
+    const W = canvas.width, H = canvas.height
+    const th = getTheme()
+    const FONT = '-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif'
+    const PAD = 56
+
+    // ---- 1. Background ----
+    const bg = ctx.createLinearGradient(0, 0, 0, H)
+    bg.addColorStop(0, th.bgGrad[0])
+    bg.addColorStop(1, th.bgGrad[1])
+    ctx.fillStyle = bg
+    ctx.fillRect(0, 0, W, H)
+
+    // Soft ambient blobs
+    ;[
+      [W * 0.88, H * 0.08, 340, th.accent2, '28'],
+      [W * 0.12, H * 0.94, 280, th.accent, '22']
+    ].forEach(([cx, cy, r, color, alpha]) => {
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r)
+      g.addColorStop(0, color + alpha)
+      g.addColorStop(1, 'transparent')
+      ctx.fillStyle = g
+      ctx.fillRect(0, 0, W, H)
+    })
+
+    let y = PAD
+
+    // ---- 2. Brand strip + hairline ----
+    ctx.font = `500 15px ${FONT}`
+    ctx.fillStyle = th.textSoft
+    ctx.textBaseline = 'top'
+    ctx.textAlign = 'left'
+    ctx.fillText('学习时间记录', PAD, y)
+    ctx.textAlign = 'right'
+    ctx.font = `400 13px ${FONT}`
+    ctx.fillText(summary.rangeLabel || '', W - PAD, y)
+    ctx.textAlign = 'left'
+    y += 28
+
+    ctx.strokeStyle = th.border
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(PAD, y)
+    ctx.lineTo(W - PAD, y)
+    ctx.stroke()
+    y += 28
+
+    // ---- 3. Label chip ----
+    const isWeek = summary.scope === 'week'
+    const chipLabel = isWeek ? '本周专注' : '今日专注'
+    ctx.font = `600 13px ${FONT}`
+    const chipW = ctx.measureText(chipLabel).width + 20
+    const chipH = 24
+    roundRect(ctx, (W - chipW) / 2, y, chipW, chipH, 12)
+    ctx.fillStyle = th.accent
+    ctx.fill()
+    ctx.fillStyle = '#fff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(chipLabel, W / 2, y + chipH / 2)
+    ctx.textBaseline = 'top'
+    ctx.textAlign = 'left'
+    y += chipH + 20
+
+    // ---- 4. Hero: duration + circular glow ----
+    const hero = fmtH(summary.totalSeconds || 0)
+    const haloR = 120
+    const haloCy = y + 58
+    const halo = ctx.createRadialGradient(W / 2, haloCy, haloR * 0.3, W / 2, haloCy, haloR)
+    halo.addColorStop(0, th.accent + '1a')
+    halo.addColorStop(1, 'transparent')
+    ctx.fillStyle = halo
+    ctx.beginPath()
+    ctx.arc(W / 2, haloCy, haloR, 0, Math.PI * 2)
+    ctx.fill()
+
+    ctx.font = `800 96px ${FONT}`
+    const heroGrad = ctx.createLinearGradient(W / 2 - 260, y, W / 2 + 260, y + 100)
+    heroGrad.addColorStop(0, th.accent)
+    heroGrad.addColorStop(1, th.accent2)
+    ctx.fillStyle = heroGrad
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+    ctx.fillText(hero, W / 2, y)
+    ctx.textBaseline = 'top'
+    ctx.textAlign = 'left'
+    y += 110
+
+    // ---- 5. Stats row: 3 equal columns with vertical dividers ----
+    const stats = [
+      { label: '专注次数', value: `${summary.sessionCount || 0} 次`, color: th.accent2 },
+      { label: '连续天数', value: `${summary.streak || 0} 天`, color: th.success },
+      { label: '标签数', value: `${(summary.tags || []).length} 个`, color: th.accent }
+    ]
+    const statY = y
+    const statH = 72
+    const colW = (W - PAD * 2) / 3
+
+    roundRect(ctx, PAD, statY, W - PAD * 2, statH, 16)
+    ctx.fillStyle = th.card
+    ctx.fill()
+    ctx.strokeStyle = th.border
+    ctx.lineWidth = 1
+    ctx.stroke()
+
+    stats.forEach((s, i) => {
+      const cx = PAD + colW * i + colW / 2
+      if (i > 0) {
+        ctx.beginPath()
+        ctx.moveTo(PAD + colW * i, statY + 14)
+        ctx.lineTo(PAD + colW * i, statY + statH - 14)
+        ctx.strokeStyle = th.border
+        ctx.lineWidth = 1
+        ctx.stroke()
+      }
+      ctx.textAlign = 'center'
+      ctx.font = `700 26px ${FONT}`
+      ctx.fillStyle = s.color
+      ctx.textBaseline = 'top'
+      ctx.fillText(s.value, cx, statY + 12)
+      ctx.font = `500 13px ${FONT}`
+      ctx.fillStyle = th.textSoft
+      ctx.fillText(s.label, cx, statY + 44)
+    })
+    ctx.textAlign = 'left'
+    y += statH + 24
+
+    // ---- 6. Quote ----
+    if (summary.quote) {
+      ctx.font = `italic 400 16px ${FONT}`
+      ctx.fillStyle = th.textSoft
+      ctx.textAlign = 'center'
+      const q = '"' + summary.quote + '"'
+      const maxW = W - PAD * 2 - 40
+      let text = q
+      if (ctx.measureText(text).width > maxW) {
+        while (ctx.measureText(text + '…"').width > maxW && text.length > 4) {
+          text = text.slice(0, -1)
+        }
+        text = text.replace(/"$/, '') + '…"'
+      }
+      ctx.fillText(text, W / 2, y)
+      ctx.textAlign = 'left'
+      y += 32
+    }
+    y += 8
+
+    // ---- 7. Chart card ----
+    const footerH = 60
+    const chartTop = y
+    const chartBottom = H - PAD - footerH
+    const chartH = chartBottom - chartTop
+
+    roundRect(ctx, PAD, chartTop, W - PAD * 2, chartH, 20)
+    ctx.fillStyle = th.card
+    ctx.fill()
+    ctx.strokeStyle = th.border
+    ctx.lineWidth = 1
+    ctx.stroke()
+
+    if (isWeek) {
+      drawWeekChart(ctx, summary.dayBuckets || [], PAD + 32, chartTop + 20, W - PAD * 2 - 64, chartH - 40, th, FONT)
+    } else {
+      drawTagChart(ctx, summary.tags || [], summary.totalSeconds || 0, PAD + 32, chartTop + 20, W - PAD * 2 - 64, chartH - 40, th, FONT)
+    }
+
+    // ---- 8. Footer ----
+    ctx.font = `400 14px ${FONT}`
+    ctx.fillStyle = th.textSoft
+    ctx.textAlign = 'center'
+    ctx.fillText('坚持的每一刻 · 都在为更好的自己积累', W / 2, H - PAD - 20)
+    ctx.textAlign = 'left'
+  }
+
+  function drawWeekChart(ctx, days, x, y, w, h, th, FONT) {
+    FONT = FONT || '-apple-system, sans-serif'
+    ctx.font = `700 16px ${FONT}`
+    ctx.fillStyle = th.text
+    ctx.fillText('过去 7 天', x, y)
+
+    const maxSec = Math.max(...days.map(d => d.seconds || 0), 1)
+    const chartTop = y + 36
+    const chartBottom = y + h - 32
+    const chartH = chartBottom - chartTop
+    const gap = 16
+    const barW = (w - gap * (days.length - 1)) / days.length
+
+    days.forEach((d, i) => {
+      const bx = x + i * (barW + gap)
+      const ratio = (d.seconds || 0) / maxSec
+      const bh = Math.max(ratio * chartH, d.seconds > 0 ? 3 : 0)
+      const by = chartBottom - bh
+      const grad = ctx.createLinearGradient(0, by, 0, chartBottom)
+      grad.addColorStop(0, th.accent2)
+      grad.addColorStop(1, th.accent)
+      ctx.fillStyle = grad
+      roundRect(ctx, bx, by, barW, bh, Math.min(7, barW / 3))
+      ctx.fill()
+      if (d.seconds > 0) {
+        ctx.font = `600 12px ${FONT}`
+        ctx.fillStyle = th.textSoft
+        ctx.textAlign = 'center'
+        ctx.fillText(fmtH(d.seconds), bx + barW / 2, by - 14)
+      }
+      ctx.font = `500 13px ${FONT}`
+      ctx.fillStyle = th.textSoft
+      ctx.textAlign = 'center'
+      ctx.fillText(d.weekday, bx + barW / 2, chartBottom + 8)
+    })
+    ctx.textAlign = 'left'
+  }
+
+  function drawTagChart(ctx, tags, total, x, y, w, h, th, FONT) {
+    FONT = FONT || '-apple-system, sans-serif'
+    ctx.font = `700 16px ${FONT}`
+    ctx.fillStyle = th.text
+    ctx.fillText('标签分布', x, y)
+
+    if (!tags.length) {
+      ctx.font = `400 14px ${FONT}`
+      ctx.fillStyle = th.textSoft
+      ctx.fillText('暂无标签，试试给学习内容分类', x, y + 40)
+      return
+    }
+    const rowH = 26
+    const rowGap = 8
+    const startY = y + 36
+    const maxRows = Math.min(tags.length, Math.floor((h - 36) / (rowH + rowGap)))
+    const list = tags.slice(0, maxRows)
+    const labelW = 100
+    const valueW = 72
+    const barX = x + labelW
+    const barW = w - labelW - valueW - 16
+
+    list.forEach((t, i) => {
+      const ry = startY + i * (rowH + rowGap)
+      ctx.font = `600 13px ${FONT}`
+      ctx.fillStyle = th.text
+      ctx.textBaseline = 'middle'
+      const name = t.name && t.name.length > 6 ? t.name.slice(0, 6) + '…' : (t.name || '')
+      ctx.fillText(name, x, ry + rowH / 2)
+
+      roundRect(ctx, barX, ry + rowH / 2 - 5, barW, 10, 5)
+      ctx.fillStyle = th.border
+      ctx.fill()
+
+      const ratio = total > 0 ? (t.seconds || 0) / total : 0
+      const fw = Math.max(barW * ratio, 5)
+      roundRect(ctx, barX, ry + rowH / 2 - 5, fw, 10, 5)
+      const g = ctx.createLinearGradient(barX, 0, barX + fw, 0)
+      g.addColorStop(0, t.color || th.accent)
+      g.addColorStop(1, th.accent2)
+      ctx.fillStyle = g
+      ctx.fill()
+
+      ctx.font = `600 12px ${FONT}`
+      ctx.fillStyle = th.textSoft
+      ctx.textAlign = 'right'
+      ctx.fillText(fmtH(t.seconds || 0), x + w, ry + rowH / 2)
+      ctx.textAlign = 'left'
+    })
+    ctx.textBaseline = 'top'
+  }
+
+  async function load() {
+    const loading = document.getElementById('share-loading')
+    if (loading) loading.classList.remove('hidden')
+    try {
+      currentSummary = await window.studyRecord.shareGetSummary({ scope: currentScope })
+      const canvas = document.getElementById('share-canvas')
+      if (canvas) drawCard(canvas, currentSummary)
+    } catch (e) {
+      showToast('加载汇总数据失败', 'warning', 2500)
+    } finally {
+      if (loading) loading.classList.add('hidden')
+    }
+  }
+
+  async function save() {
+    const canvas = document.getElementById('share-canvas')
+    if (!canvas) return
+    try {
+      const dataUrl = canvas.toDataURL('image/png')
+      const name = `study-${currentScope === 'week' ? 'week' : 'day'}-summary.png`
+      const res = await window.studyRecord.shareSaveImage({ dataUrl, defaultName: name })
+      if (res && res.success) {
+        showToast(`✓ 已保存到 ${res.path}`, 'success', 3500)
+      } else if (res && res.canceled) {
+        // 用户取消,不提示
+      } else {
+        showToast('保存失败: ' + (res && res.error || '未知错误'), 'warning', 3000)
+      }
+    } catch (e) {
+      showToast('保存失败: ' + (e.message || e), 'warning', 3000)
+    }
+  }
+
+  function bind() {
+    if (bind._bound) return
+    bind._bound = true
+    const tabsRoot = document.querySelector('.share-scope-tabs')
+    document.querySelectorAll('.share-tab').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        document.querySelectorAll('.share-tab').forEach(b => b.classList.remove('active'))
+        btn.classList.add('active')
+        currentScope = btn.dataset.scope || 'day'
+        if (tabsRoot) tabsRoot.dataset.scope = currentScope
+        await load()
+      })
+    })
+    const refreshBtn = document.getElementById('share-refresh-btn')
+    if (refreshBtn) refreshBtn.addEventListener('click', load)
+    const saveBtn = document.getElementById('share-save-btn')
+    if (saveBtn) saveBtn.addEventListener('click', save)
+    const trigger = document.getElementById('share-preview-trigger')
+    if (trigger) trigger.addEventListener('click', openLightbox)
+    bindLightbox()
+  }
+
+  // ---- Lightbox：放大预览 ----
+  const ZOOM_MIN = 0.5
+  const ZOOM_MAX = 5
+  const ZOOM_STEP = 0.25
+  let lbZoom = 1
+  let lbPanX = 0
+  let lbPanY = 0
+  let lbBound = false
+
+  function openLightbox() {
+    const canvas = document.getElementById('share-canvas')
+    const lb = document.getElementById('share-lightbox')
+    const img = document.getElementById('share-lightbox-img')
+    if (!canvas || !lb || !img) return
+    try {
+      img.src = canvas.toDataURL('image/png')
+    } catch (_) { return }
+    lb.classList.remove('hidden')
+    lb.setAttribute('aria-hidden', 'false')
+    document.body.style.overflow = 'hidden'
+    resetLb(false)
+  }
+
+  function closeLightbox() {
+    const lb = document.getElementById('share-lightbox')
+    if (!lb) return
+    lb.classList.add('hidden')
+    lb.setAttribute('aria-hidden', 'true')
+    document.body.style.overflow = ''
+  }
+
+  function applyLbTransform(animate = true) {
+    const img = document.getElementById('share-lightbox-img')
+    const stage = document.getElementById('share-lightbox-stage')
+    if (!img || !stage) return
+    stage.classList.toggle('no-transition', !animate)
+    if (lbZoom <= 1) { lbPanX = 0; lbPanY = 0 }
+    img.style.transform = `translate(${lbPanX}px, ${lbPanY}px) scale(${lbZoom})`
+    const pct = document.getElementById('share-lb-percent')
+    if (pct) pct.textContent = `${Math.round(lbZoom * 100)}%`
+    const zo = document.getElementById('share-lb-zoom-out')
+    const zi = document.getElementById('share-lb-zoom-in')
+    if (zo) zo.disabled = lbZoom <= ZOOM_MIN + 0.001
+    if (zi) zi.disabled = lbZoom >= ZOOM_MAX - 0.001
+  }
+
+  function setLbZoom(next, focal) {
+    const prev = lbZoom
+    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next))
+    if (clamped === prev) return
+    if (focal) {
+      const ratio = clamped / prev
+      lbPanX = focal.x + (lbPanX - focal.x) * ratio
+      lbPanY = focal.y + (lbPanY - focal.y) * ratio
+    }
+    lbZoom = clamped
+    applyLbTransform(true)
+  }
+
+  function resetLb(animate = true) {
+    lbZoom = 1; lbPanX = 0; lbPanY = 0
+    applyLbTransform(animate)
+  }
+
+  function bindLightbox() {
+    if (lbBound) return
+    lbBound = true
+    const lb = document.getElementById('share-lightbox')
+    const stage = document.getElementById('share-lightbox-stage')
+    if (!lb || !stage) return
+
+    document.getElementById('share-lb-zoom-in')?.addEventListener('click', () => setLbZoom(lbZoom + ZOOM_STEP))
+    document.getElementById('share-lb-zoom-out')?.addEventListener('click', () => setLbZoom(lbZoom - ZOOM_STEP))
+    document.getElementById('share-lb-reset')?.addEventListener('click', () => resetLb(true))
+    document.getElementById('share-lb-close')?.addEventListener('click', closeLightbox)
+    lb.querySelector('[data-close="share-lightbox"]')?.addEventListener('click', closeLightbox)
+
+    stage.addEventListener('wheel', (e) => {
+      e.preventDefault()
+      const rect = stage.getBoundingClientRect()
+      const focal = { x: e.clientX - rect.left - rect.width / 2, y: e.clientY - rect.top - rect.height / 2 }
+      const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP
+      setLbZoom(lbZoom + delta, focal)
+    }, { passive: false })
+
+    stage.addEventListener('dblclick', () => {
+      if (lbZoom > 1) resetLb(true)
+      else setLbZoom(2)
+    })
+
+    let isPanning = false
+    let startX = 0, startY = 0, sx = 0, sy = 0
+    stage.addEventListener('pointerdown', (e) => {
+      if (lbZoom <= 1) return
+      isPanning = true
+      stage.classList.add('is-panning')
+      stage.setPointerCapture(e.pointerId)
+      startX = e.clientX; startY = e.clientY
+      sx = lbPanX; sy = lbPanY
+    })
+    stage.addEventListener('pointermove', (e) => {
+      if (!isPanning) return
+      lbPanX = sx + (e.clientX - startX)
+      lbPanY = sy + (e.clientY - startY)
+      applyLbTransform(false)
+    })
+    const end = (e) => {
+      if (!isPanning) return
+      isPanning = false
+      stage.classList.remove('is-panning')
+      try { stage.releasePointerCapture(e.pointerId) } catch (_) {}
+    }
+    stage.addEventListener('pointerup', end)
+    stage.addEventListener('pointercancel', end)
+    stage.addEventListener('pointerleave', end)
+
+    document.addEventListener('keydown', (e) => {
+      const open = !lb.classList.contains('hidden')
+      if (!open) return
+      if (e.key === 'Escape') { e.preventDefault(); closeLightbox() }
+      else if (e.key === '+' || e.key === '=') { e.preventDefault(); setLbZoom(lbZoom + ZOOM_STEP) }
+      else if (e.key === '-' || e.key === '_') { e.preventDefault(); setLbZoom(lbZoom - ZOOM_STEP) }
+      else if (e.key === '0') { e.preventDefault(); resetLb(true) }
+    })
+  }
+
+  return {
+    async open(scope = 'day') {
+      currentScope = scope
+      const tabsRoot = document.querySelector('.share-scope-tabs')
+      if (tabsRoot) tabsRoot.dataset.scope = scope
+      document.querySelectorAll('.share-tab').forEach(b => {
+        b.classList.toggle('active', b.dataset.scope === scope)
+      })
+      bind()
+      showModal('share-modal')
+      await load()
+    }
+  }
+})()
+
+async function showShareModal() {
+  await shareCardManager.open('day')
 }
 
 // ---------- 寄语管理弹窗 ----------
@@ -2604,6 +3355,9 @@ function bindMainButtons() {
 
   const exportBtn = document.getElementById('open-export')
   if (exportBtn) exportBtn.addEventListener('click', showExportModal)
+
+  const shareBtn = document.getElementById('open-share')
+  if (shareBtn) shareBtn.addEventListener('click', showShareModal)
 
   const quotesBtn = document.getElementById('open-quotes')
   if (quotesBtn) quotesBtn.addEventListener('click', showQuotesModal)

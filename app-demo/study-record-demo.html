@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>学习时间记录 · 功能演示</title>
+<style>
+/* ============================================================
+   学习时间记录 — 功能演示动画
+   视觉 token 忠实复刻自 styles.css（蓝紫渐变 accent / 玻璃拟态 / expoOut）
+   尺寸为演示放大版（原生 ~438px 面板 → 760px），便于 1920×1080 阅读
+   ============================================================ */
+
+:root {
+  --bg-primary: #f2f5fc;
+  --bg-panel: rgba(255, 255, 255, 0.78);
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
+  --text-primary: #1a1f36;
+  --text-secondary: #5e6480;
+  --text-muted: #8e94ab;
+  --accent: #6a84e6;
+  --accent-rgb: 106, 132, 230;
+  --accent-2: #936ae6;
+  --accent-soft: rgba(106, 132, 230, 0.12);
+  --accent-gradient: linear-gradient(135deg, #6a84e6 0%, #936ae6 100%);
+  --success: #38b978;
+  --success-rgb: 56, 185, 120;
+  --success-soft: rgba(56, 185, 120, 0.12);
+  --warning: #e67c46;
+  --warning-rgb: 230, 124, 70;
+  --warning-soft: rgba(230, 124, 70, 0.12);
+  --danger: #e25555;
+  --danger-rgb: 226, 85, 85;
+  --danger-soft: rgba(226, 85, 85, 0.12);
+  --border: rgba(130, 150, 190, 0.18);
+  --shadow-md: 0 18px 50px rgba(20, 40, 80, 0.14);
+  --shadow-lg: 0 40px 90px rgba(20, 40, 80, 0.22);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace;
+  --sans: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+}
+
+body[data-theme="dark"] {
+  --bg-primary: #141822;
+  --bg-panel: rgba(28, 34, 52, 0.88);
+  --bg-card: rgba(34, 40, 60, 0.94);
+  --bg-input: #2a3048;
+  --text-primary: #e4eaf7;
+  --text-secondary: #a0a8c2;
+  --text-muted: #6a7296;
+  --accent: #82a0ff;
+  --accent-rgb: 130, 160, 255;
+  --accent-2: #b48aff;
+  --accent-soft: rgba(130, 160, 255, 0.15);
+  --accent-gradient: linear-gradient(135deg, #82a0ff 0%, #b48aff 100%);
+  --warning: #f09a5f;
+  --warning-rgb: 240, 154, 95;
+  --warning-soft: rgba(240, 154, 95, 0.16);
+  --border: rgba(255, 255, 255, 0.09);
+  --shadow-lg: 0 40px 90px rgba(0, 0, 0, 0.5);
+}
+
+body[data-theme="eyecare"] {
+  --bg-primary: #d6e4d0;
+  --bg-panel: rgba(228, 241, 222, 0.85);
+  --bg-card: rgba(242, 250, 238, 0.95);
+  --bg-input: #eef6e8;
+  --text-primary: #263822;
+  --text-secondary: #4a5e44;
+  --text-muted: #778e72;
+  --accent: #5a8a4f;
+  --accent-rgb: 90, 138, 79;
+  --accent-2: #7aa66e;
+  --accent-soft: rgba(90, 138, 79, 0.14);
+  --accent-gradient: linear-gradient(135deg, #5a8a4f 0%, #7aa66e 100%);
+  --warning: #c77936;
+  --warning-rgb: 199, 121, 54;
+  --warning-soft: rgba(199, 121, 54, 0.14);
+  --border: rgba(80, 110, 70, 0.2);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: #0b1020;
+  font-family: var(--sans);
+  overflow: hidden;
+  user-select: none;
+  transition: background 0.6s var(--ease-out);
+}
+
+/* === 背景舞台 === */
+.backdrop {
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 46%),
+    radial-gradient(circle at 84% 88%, color-mix(in srgb, var(--accent-2) 18%, transparent), transparent 50%),
+    var(--bg-primary);
+  transition: background 0.6s var(--ease-out);
+}
+/* 极淡点阵纹理 */
+.backdrop::before {
+  content: ''; position: absolute; inset: 0;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--accent) 18%, transparent) 1px, transparent 1.4px);
+  background-size: 38px 38px;
+  opacity: 0.5;
+  mask-image: radial-gradient(circle at 50% 45%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 30%, transparent 75%);
+}
+/* 巨型水印 app icon（极淡） */
+.backdrop::after {
+  content: ''; position: absolute;
+  right: -120px; bottom: -120px;
+  width: 520px; height: 520px;
+  background: var(--accent-gradient);
+  border-radius: 120px;
+  opacity: 0.06;
+  filter: blur(2px);
+  transition: background 0.6s var(--ease-out);
+}
+
+/* === 画布 1920×1080 居中缩放 === */
+.stage {
+  position: fixed; top: 50%; left: 50%;
+  width: 1920px; height: 1080px;
+  transform: translate(-50%, -50%) scale(var(--stage-scale, 1));
+  transform-origin: center center;
+}
+
+/* === app 窗口（主面板） === */
+.app-window {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 760px;
+  transform: translate(-50%, -50%) scale(var(--win-scale, 1));
+  transform-origin: center center;
+  opacity: var(--win-opacity, 1);
+  background: var(--bg-panel);
+  backdrop-filter: blur(22px) saturate(165%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  transition: box-shadow 0.4s var(--ease-out), border-color 0.4s var(--ease-out);
+}
+
+.titlebar {
+  position: relative;
+  height: 46px;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.titlebar-brand {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  color: var(--text-secondary);
+}
+.brand-name {
+  font-size: 17px; font-weight: 700; letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+.brand-version {
+  font-size: 12px; font-weight: 500; color: var(--text-muted);
+  font-family: var(--mono);
+}
+.titlebar-actions { display: flex; gap: 4px; }
+.tb-btn {
+  width: 34px; height: 34px; border: none;
+  background: transparent; color: var(--text-muted);
+  border-radius: 8px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.tb-btn svg { width: 18px; height: 18px; }
+.tb-btn:hover { background: var(--accent-soft); color: var(--accent); }
+.tb-btn:active { transform: scale(0.9); }
+.tb-btn.is-pressed { background: var(--accent-soft); color: var(--accent); transform: scale(0.9); }
+.tb-btn-close:hover { background: var(--danger-soft); color: var(--danger); }
+
+/* === 时间展示区 === */
+.study-content { padding: 26px 28px 24px; }
+
+#today-time {
+  position: relative;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 132px;
+  grid-template-areas: "ring info pet" "ring meta pet";
+  align-items: center;
+  column-gap: 26px;
+  row-gap: 14px;
+  min-height: 230px;
+}
+
+.progress-ring-wrapper {
+  grid-area: ring;
+  position: relative;
+  width: 150px; height: 150px;
+  align-self: center;
+  justify-self: center;
+}
+.progress-ring {
+  width: 150px; height: 150px;
+  transform: rotate(-90deg);
+  filter: drop-shadow(0 12px 22px rgba(var(--accent-rgb), 0.18));
+  transition: filter 0.4s var(--ease-out);
+}
+.progress-ring-bg { stroke: color-mix(in srgb, var(--border) 78%, transparent); }
+.progress-ring-fg {
+  stroke: url(#ringGrad);
+  transition: stroke-dashoffset 0.5s var(--ease-out), stroke 0.4s;
+}
+.progress-ring-wrapper.complete .progress-ring-fg { stroke: var(--success); }
+.progress-ring-center {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center; line-height: 1;
+}
+#progress-percent {
+  display: block;
+  font-size: 34px; font-weight: 900;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  transition: color 0.4s;
+}
+.progress-ring-wrapper.complete #progress-percent { color: var(--success); }
+.ring-unit {
+  font-size: 13px; font-weight: 700; opacity: 0.55;
+  color: var(--accent); display: block; margin-top: -2px;
+}
+.progress-ring-wrapper.complete .ring-unit { color: var(--success); }
+
+.today-info {
+  grid-area: info;
+  min-width: 0;
+  display: flex; flex-direction: column;
+  gap: 14px; justify-content: center;
+}
+.label-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.status-dot {
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+  transition: background 0.4s, box-shadow 0.4s;
+}
+.status-dot.active {
+  background: var(--success);
+  box-shadow: 0 0 0 0 rgba(var(--success-rgb), 0.5);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+.status-dot.paused {
+  background: var(--warning);
+  box-shadow: 0 0 0 5px var(--warning-soft);
+}
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--success-rgb), 0.5); }
+  50% { box-shadow: 0 0 0 8px rgba(var(--success-rgb), 0); }
+}
+.label {
+  font-size: 15px; color: var(--text-secondary);
+  font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.pause-state {
+  display: none;
+  padding: 4px 12px; border-radius: 999px;
+  background: var(--warning-soft);
+  border: 1px solid rgba(var(--warning-rgb), 0.3);
+  color: var(--warning);
+  font-size: 12px; font-weight: 800;
+  align-items: center; gap: 5px;
+}
+.pause-state::before {
+  content: ''; width: 7px; height: 10px;
+  border-left: 2.5px solid currentColor;
+  border-right: 2.5px solid currentColor;
+  opacity: 0.9;
+}
+body.session-paused .pause-state { display: inline-flex; }
+.streak-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 12px; border-radius: 999px;
+  background: var(--warning-soft);
+  border: 1px solid rgba(var(--warning-rgb), 0.25);
+  font-size: 12px; font-weight: 800;
+  color: var(--warning); white-space: nowrap;
+}
+.streak-badge svg { width: 13px; height: 13px; }
+
+#today-duration {
+  font-variant-numeric: tabular-nums;
+  display: flex; align-items: baseline; gap: 12px;
+}
+.digits {
+  font-family: var(--mono);
+  font-size: 76px; font-weight: 850;
+  letter-spacing: -0.045em;
+  color: var(--text-primary);
+  line-height: 0.96;
+  transition: color 0.3s var(--ease-out), opacity 0.3s var(--ease-out);
+  white-space: nowrap;
+}
+body.session-paused .digits {
+  color: var(--text-secondary);
+  opacity: 0.78;
+  animation: pausedDigitsPulse 1.5s var(--ease-in-out) infinite;
+}
+@keyframes pausedDigitsPulse {
+  0%, 100% { opacity: 0.68; }
+  50% { opacity: 0.94; }
+}
+.mini-percent {
+  font-size: 22px; font-weight: 700;
+  color: var(--accent); opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+.mini-progress-bar {
+  height: 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 80%, transparent);
+  overflow: hidden;
+}
+.mini-progress-bar::after {
+  content: ''; display: block; height: 100%;
+  border-radius: inherit;
+  background: var(--accent-gradient);
+  width: var(--bar-width, 0%);
+  transition: width 0.5s var(--ease-out), background 0.4s;
+}
+.mini-progress-bar.complete::after { background: var(--success); }
+
+.meta-row {
+  grid-area: meta;
+  display: flex; align-items: center; gap: 10px;
+  min-width: 0;
+  font-size: 14px; color: var(--text-muted);
+}
+.inline-quote {
+  min-width: 0; color: var(--text-muted);
+  opacity: 0.85; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  font-style: normal;
+}
+
+/* === 学习宠物 === */
+.pet-container {
+  grid-area: pet;
+  position: relative;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 8px;
+  justify-self: end; align-self: center;
+  width: 132px; min-width: 132px;
+  padding: 10px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+.pet-shell {
+  position: relative;
+  width: 104px; height: 108px;
+  display: grid; place-items: center;
+}
+.pet-visual {
+  position: relative;
+  width: 96px; height: 96px;
+  border: 0; border-radius: 26px;
+  background:
+    radial-gradient(circle at 50% 74%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 44%),
+    color-mix(in srgb, var(--accent-soft) 62%, transparent);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+  will-change: transform;
+  overflow: visible;
+  transition: background 0.4s var(--ease-out), color 0.4s;
+}
+.pet-svg {
+  width: 100%; height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 8px 12px rgba(20, 40, 80, 0.14));
+}
+.pet-body-group { transform-origin: 32px 38px; animation: petBreathe 2.8s ease-in-out infinite; }
+.pet-eyes-open { transform-origin: 32px 28px; animation: petBlink 5.5s ease-in-out infinite; }
+.pet-tail { transform-origin: 50px 42px; }
+.pet-visual[data-state="studying"] .pet-body-group { animation: petStudyPulse 1.2s ease-in-out infinite; }
+.pet-visual[data-state="studying"] .pet-tail { animation: petTailWag 0.42s ease-in-out infinite; }
+.pet-visual[data-state="paused"] .pet-body-group { animation: petPausedTilt 2s ease-in-out infinite; }
+.pet-visual.is-celebrating { animation: petJumpBounce 0.76s var(--ease-out); }
+@keyframes petBreathe { 0%,100%{transform:translateY(0) scale(1);} 50%{transform:translateY(-1px) scale(1.025);} }
+@keyframes petBlink { 0%,88%,100%{transform:scaleY(1);} 91%,94%{transform:scaleY(0.12);} }
+@keyframes petStudyPulse { 0%,100%{transform:translateY(0) rotate(-1deg) scale(1.03);} 50%{transform:translateY(-2px) rotate(1deg) scale(1.07);} }
+@keyframes petTailWag { 0%,100%{transform:rotate(-9deg);} 50%{transform:rotate(13deg);} }
+@keyframes petPausedTilt { 0%,100%{transform:rotate(-4deg) translateY(1px);} 50%{transform:rotate(3deg) translateY(0);} }
+@keyframes petJumpBounce {
+  0%,100%{transform:translateY(0) scale(1);}
+  35%{transform:translateY(-12px) scale(1.08);}
+  62%{transform:translateY(2px) scale(0.98);}
+  82%{transform:translateY(-4px) scale(1.03);}
+}
+.pet-level-badge {
+  position: absolute; top: -4px; right: -6px;
+  min-width: 42px; height: 22px;
+  padding: 0 7px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-gradient); color: #fff;
+  font-size: 12px; font-weight: 800;
+  box-shadow: 0 6px 14px rgba(var(--accent-rgb), 0.3);
+  z-index: 2;
+}
+.pet-exp-bar {
+  position: absolute; left: 12px; right: 12px; bottom: 3px;
+  height: 5px; border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 75%, transparent);
+  overflow: hidden;
+}
+.pet-exp-fill {
+  width: var(--exp-width, 0%); height: 100%;
+  border-radius: inherit;
+  background: var(--accent-gradient);
+  transition: width 0.5s var(--ease-out);
+}
+.pet-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 5px; width: 100%;
+}
+.pet-stat-bar {
+  height: 4px; border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 76%, transparent);
+  overflow: hidden;
+}
+.pet-stat-fill {
+  width: var(--stat, 0%); height: 100%; border-radius: inherit;
+  transition: width 0.5s var(--ease-out);
+}
+.mood-fill { background: linear-gradient(90deg, var(--warning), var(--accent)); }
+.energy-fill { background: var(--success); }
+.affection-fill { background: var(--accent-gradient); }
+
+/* === 操作按钮 === */
+.btn-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+.btn-group .control-hidden { display: none !important; }
+.btn {
+  padding: 0 18px; height: 54px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  font-size: 16px; font-weight: 700;
+  background: var(--bg-card); color: var(--text-primary);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: inherit;
+  transition: transform 0.15s var(--ease-out), border-color 0.15s, background 0.15s, box-shadow 0.15s, color 0.15s;
+}
+.btn:hover { transform: translateY(-1px); border-color: var(--accent); }
+.btn:active { transform: scale(0.97); }
+.btn .btn-icon { width: 16px; height: 16px; flex-shrink: 0; }
+#start-btn {
+  grid-column: 1 / -1;
+  background: var(--accent-gradient); color: #fff; border-color: transparent;
+  box-shadow: 0 10px 24px rgba(var(--accent-rgb), 0.26);
+  min-height: 60px; font-size: 18px;
+}
+#start-btn:hover { box-shadow: 0 10px 28px rgba(var(--accent-rgb), 0.38); }
+#pause-btn {
+  grid-column: 1 / 2;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+}
+#end-btn {
+  grid-column: 2 / -1;
+}
+#end-btn:not(:disabled) {
+  background: var(--danger-soft); color: var(--danger);
+  border-color: rgba(var(--danger-rgb), 0.28);
+}
+.btn.pulse-press { animation: btnPress 0.4s var(--ease-out); }
+@keyframes btnPress {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.4); }
+  50% { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+
+/* === 弹窗层 === */
+.modal-layer {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+  opacity: var(--modal-opacity, 0);
+  transition: opacity 0.3s var(--ease-out);
+}
+.modal-backdrop-bg {
+  position: absolute; inset: 0;
+  background: rgba(10, 20, 40, 0.32);
+  backdrop-filter: blur(6px);
+}
+.modal-panel {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: var(--shadow-lg);
+  padding: 26px 28px;
+  transform: scale(var(--modal-scale, 0.96)) translateY(var(--modal-y, 8px));
+  transition: transform 0.3s var(--ease-out);
+}
+.modal-header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.modal-title {
+  font-size: 19px; font-weight: 700; color: var(--accent);
+  flex: 1; letter-spacing: 0.2px;
+}
+.modal-close {
+  width: 30px; height: 30px; min-width: 30px;
+  border-radius: 50%; background: transparent; border: none;
+  font-size: 22px; line-height: 1; color: var(--text-muted);
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* 统计弹窗 */
+.stats-modal { width: 660px; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+.stats-card {
+  background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 12px; text-align: center;
+}
+.sc-label { font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
+.sc-value {
+  font-size: 26px; font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.stats-section { margin-bottom: 18px; }
+.stats-section:last-child { margin-bottom: 0; }
+.stats-section-title {
+  font-size: 14px; color: var(--text-secondary); font-weight: 700;
+  margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;
+}
+.heatmap-legend { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--text-muted); }
+.legend-cell { width: 11px; height: 11px; border-radius: 3px; }
+.legend-cell.l0 { background: var(--border); }
+.legend-cell.l1 { background: rgba(var(--accent-rgb), 0.22); }
+.legend-cell.l2 { background: rgba(var(--accent-rgb), 0.42); }
+.legend-cell.l3 { background: rgba(var(--accent-rgb), 0.66); }
+.legend-cell.l4 { background: rgba(var(--accent-rgb), 1); }
+.week-chart {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px;
+  height: 110px; align-items: end; padding: 0 4px;
+}
+.week-bar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 100%; }
+.week-bar-fill {
+  width: 100%; max-width: 36px;
+  background: var(--accent-gradient);
+  border-radius: 6px 6px 0 0;
+  height: var(--bar-h, 0%);
+  transition: height 0.6s var(--ease-out), filter 0.15s;
+}
+.week-bar-label { font-size: 12px; color: var(--text-muted); }
+.heatmap { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.heatmap-cell { aspect-ratio: 1; border-radius: 4px; background: var(--border); opacity: var(--cell-opacity, 0); transform: scale(var(--cell-scale, 0.6)); transition: opacity 0.25s var(--ease-out), transform 0.25s var(--ease-out), background 0.2s; }
+.heatmap-cell.l1 { background: rgba(var(--accent-rgb), 0.22); }
+.heatmap-cell.l2 { background: rgba(var(--accent-rgb), 0.42); }
+.heatmap-cell.l3 { background: rgba(var(--accent-rgb), 0.66); }
+.heatmap-cell.l4 { background: rgba(var(--accent-rgb), 1); }
+
+/* 分享卡片弹窗 */
+.share-modal { width: 380px; }
+.share-tabs {
+  position: relative; display: inline-flex; padding: 5px;
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+  border-radius: 999px; margin-bottom: 16px;
+}
+.share-thumb {
+  position: absolute; top: 5px; bottom: 5px; left: 5px;
+  width: calc(50% - 5px); border-radius: 999px;
+  background: var(--bg-card);
+  box-shadow: 0 1px 4px rgba(var(--accent-rgb), 0.2);
+  transition: transform 0.3s var(--ease-out);
+}
+.share-tabs[data-scope="week"] .share-thumb { transform: translateX(100%); }
+.share-tab {
+  background: transparent; border: none;
+  color: var(--text-secondary); font-size: 14px; font-weight: 700;
+  padding: 7px 26px; border-radius: 999px;
+  transition: color 0.25s;
+}
+.share-tab.active { color: var(--accent); }
+.share-card {
+  width: 320px; aspect-ratio: 720 / 960;
+  border-radius: 18px; overflow: hidden;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 16%, var(--bg-card)) 0%, var(--bg-card) 70%);
+  border: 1px solid var(--border);
+  box-shadow: 0 20px 50px rgba(20, 40, 80, 0.18);
+  display: flex; flex-direction: column;
+  padding: 26px 24px;
+  position: relative;
+}
+.share-card-header { display: flex; justify-content: space-between; align-items: center; }
+.share-card-brand { font-size: 13px; font-weight: 700; color: var(--accent); }
+.share-card-date { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+.share-card-duration {
+  font-family: var(--mono); font-size: 44px; font-weight: 850;
+  color: var(--text-primary); letter-spacing: -0.04em;
+  margin-top: 28px; line-height: 1;
+}
+.share-card-label { font-size: 12px; color: var(--text-muted); margin-top: 6px; letter-spacing: 0.08em; text-transform: uppercase; }
+.share-card-pet {
+  width: 56px; height: 56px; margin-top: auto;
+  color: var(--accent);
+}
+.share-card-quote {
+  font-size: 13px; color: var(--text-secondary);
+  margin-top: 14px; line-height: 1.5; font-style: italic;
+}
+.share-card-footer {
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-muted);
+  display: flex; justify-content: space-between;
+}
+
+/* === 徽章解锁 toast === */
+.badge-toast {
+  position: absolute;
+  top: 28%; left: 50%;
+  transform: translate(-50%, -50%) scale(0.7);
+  z-index: 60; pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.4s var(--ease-out);
+}
+.badge-toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.badge-card {
+  background: var(--accent-gradient); color: #fff;
+  padding: 22px 34px; border-radius: 22px;
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
+}
+.badge-icon { font-size: 52px; margin-bottom: 4px; }
+.badge-title { font-size: 14px; letter-spacing: 1px; opacity: 0.9; }
+.badge-name { font-size: 22px; font-weight: 800; margin: 4px 0; }
+.badge-desc { font-size: 13px; opacity: 0.85; }
+
+/* === 收尾功能网格 === */
+.feature-grid {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 1180px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 18px;
+  opacity: var(--grid-opacity, 0);
+  transition: opacity 0.5s var(--ease-out);
+}
+.feature-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 22px 16px;
+  text-align: center;
+  box-shadow: var(--shadow-md);
+  opacity: var(--fc-opacity, 0);
+  transform: translateY(var(--fc-y, 24px)) scale(var(--fc-scale, 0.92));
+  transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out);
+}
+.feature-card .fc-icon {
+  width: 38px; height: 38px;
+  margin: 0 auto 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.feature-card .fc-icon svg { width: 22px; height: 22px; }
+.feature-card .fc-name { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+
+/* === 字幕 === */
+.caption {
+  position: absolute;
+  left: 50%; bottom: 96px;
+  transform: translateX(-50%);
+  font-size: 26px; font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  opacity: var(--caption-opacity, 0);
+  transition: opacity 0.4s var(--ease-out);
+  text-align: center;
+  white-space: nowrap;
+  text-shadow: 0 2px 20px color-mix(in srgb, var(--bg-primary) 80%, transparent);
+}
+.caption .accent { color: var(--accent); }
+
+/* === 顶部标题（intro/outro） === */
+.title-overlay {
+  position: absolute;
+  left: 50%; top: 110px;
+  transform: translateX(-50%);
+  text-align: center;
+  opacity: var(--title-opacity, 0);
+  transition: opacity 0.5s var(--ease-out);
+}
+.title-overlay .t-main {
+  font-size: 64px; font-weight: 900;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+.title-overlay .t-sub {
+  font-size: 22px; font-weight: 600;
+  color: var(--accent);
+  margin-top: 14px;
+  letter-spacing: 0.12em;
+}
+
+/* === 水印 === */
+.watermark {
+  position: absolute;
+  bottom: 36px; right: 52px;
+  font-size: 14px;
+  color: color-mix(in srgb, var(--text-secondary) 60%, transparent);
+  letter-spacing: 0.18em;
+  font-family: var(--mono);
+  opacity: var(--wm-opacity, 1);
+  pointer-events: none;
+  z-index: 100;
+}
+</style>
+</head>
+<body data-theme="light">
+
+<!-- SVG 渐变定义（全局复用） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="var(--accent)"></stop>
+      <stop offset="100%" stop-color="var(--accent-2)"></stop>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="backdrop"></div>
+
+<div class="stage" id="stage">
+
+  <!-- 顶部标题（intro / outro） -->
+  <div class="title-overlay" id="title-overlay">
+    <div class="t-main">学习时间记录</div>
+    <div class="t-sub">专注每一刻的成长</div>
+  </div>
+
+  <!-- app 窗口 -->
+  <div class="app-window" id="app-window">
+    <div class="titlebar">
+      <div class="titlebar-brand">
+        <span class="brand-name">学习时间记录</span>
+        <span class="brand-version">v1.0.2</span>
+      </div>
+      <div class="titlebar-actions">
+        <button class="tb-btn" id="theme-btn" title="切换主题">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        </button>
+        <button class="tb-btn" title="迷你模式">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12" rx="1.5"/><line x1="4" y1="12" x2="20" y2="12"/></svg>
+        </button>
+        <button class="tb-btn tb-btn-close" title="退出">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="6" y1="18" x2="18" y2="6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="study-content">
+      <div id="today-time">
+        <div class="progress-ring-wrapper" id="ring-wrapper">
+          <svg class="progress-ring" width="150" height="150" viewBox="0 0 150 150">
+            <circle class="progress-ring-bg" cx="75" cy="75" r="64" fill="none" stroke-width="9"></circle>
+            <circle class="progress-ring-fg" id="ring-fg" cx="75" cy="75" r="64" fill="none" stroke-width="9"
+                    stroke-dasharray="402.12" stroke-dashoffset="402.12" stroke-linecap="round"></circle>
+          </svg>
+          <div class="progress-ring-center">
+            <span id="progress-percent">0</span><span class="ring-unit">%</span>
+          </div>
+        </div>
+
+        <div class="today-info">
+          <div class="label-row">
+            <span class="status-dot" id="status-dot"></span>
+            <span class="label">今日学习</span>
+            <span class="pause-state">已暂停</span>
+            <span class="streak-badge">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"/></svg>
+              <span id="streak-text">7</span>
+            </span>
+          </div>
+          <div id="today-duration">
+            <span class="digits" id="digits">00:00:00</span>
+            <span class="mini-percent" id="mini-percent">0%</span>
+          </div>
+          <div class="mini-progress-bar" id="mini-bar"></div>
+          <div class="meta-row">
+            <span class="inline-quote" id="quote">心若有所向，平凡亦有光。</span>
+          </div>
+        </div>
+
+        <div class="pet-container">
+          <div class="pet-shell">
+            <button class="pet-visual" id="pet-visual" type="button">
+              <svg class="pet-svg" viewBox="0 0 64 64">
+                <g class="pet-tail"><path d="M50 44 Q61 38 58 26" stroke="currentColor" stroke-width="7" fill="none" stroke-linecap="round"/></g>
+                <g class="pet-body-group">
+                  <path d="M22 14 L17 3 L29 9 Z" fill="currentColor"/>
+                  <path d="M42 14 L47 3 L35 9 Z" fill="currentColor"/>
+                  <ellipse cx="32" cy="37" rx="21" ry="19" fill="currentColor"/>
+                  <ellipse cx="32" cy="42" rx="13" ry="10" fill="rgba(255,255,255,0.28)"/>
+                  <g class="pet-eyes-open">
+                    <circle cx="25" cy="33" r="2.8" fill="#1a1f36"/>
+                    <circle cx="39" cy="33" r="2.8" fill="#1a1f36"/>
+                    <circle cx="26" cy="32" r="0.9" fill="#fff"/>
+                    <circle cx="40" cy="32" r="0.9" fill="#fff"/>
+                  </g>
+                  <path d="M28 41 Q32 44 36 41" stroke="rgba(26,31,54,0.55)" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+                  <circle cx="21" cy="39" r="2.2" fill="rgba(255,150,150,0.55)"/>
+                  <circle cx="43" cy="39" r="2.2" fill="rgba(255,150,150,0.55)"/>
+                </g>
+              </svg>
+            </button>
+            <div class="pet-level-badge" id="pet-level">Lv.5</div>
+            <div class="pet-exp-bar"><div class="pet-exp-fill" id="pet-exp"></div></div>
+          </div>
+          <div class="pet-stats">
+            <div class="pet-stat-bar"><div class="pet-stat-fill mood-fill" id="mood"></div></div>
+            <div class="pet-stat-bar"><div class="pet-stat-fill energy-fill" id="energy"></div></div>
+            <div class="pet-stat-bar"><div class="pet-stat-fill affection-fill" id="affection"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-group" id="btn-group">
+        <button class="btn" id="start-btn">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>
+          <span>开始记录</span>
+        </button>
+        <button class="btn control-hidden" id="pause-btn">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/></svg>
+          <span>暂停</span>
+        </button>
+        <button class="btn control-hidden" id="end-btn">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+          <span>结束记录</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 徽章解锁 toast -->
+    <div class="badge-toast" id="badge-toast">
+      <div class="badge-card">
+        <div class="badge-icon">🏆</div>
+        <div class="badge-title">徽章解锁</div>
+        <div class="badge-name">坚持一公里</div>
+        <div class="badge-desc">累计学习满 100 小时</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 弹窗层 -->
+  <div class="modal-layer" id="modal-layer">
+    <div class="modal-backdrop-bg"></div>
+
+    <!-- 统计弹窗 -->
+    <div class="modal-panel stats-modal" id="stats-modal">
+      <div class="modal-header">
+        <span class="modal-title">数据统计</span>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="stats-grid">
+        <div class="stats-card"><div class="sc-label">累计时长</div><div class="sc-value" id="ov-total">0h</div></div>
+        <div class="stats-card"><div class="sc-label">最长连续</div><div class="sc-value" id="ov-streak">0 天</div></div>
+        <div class="stats-card"><div class="sc-label">总记录数</div><div class="sc-value" id="ov-sessions">0</div></div>
+      </div>
+      <div class="stats-section">
+        <div class="stats-section-title"><span>最近 7 天</span></div>
+        <div class="week-chart" id="week-chart"></div>
+      </div>
+      <div class="stats-section">
+        <div class="stats-section-title">
+          <span>最近 35 天热力图</span>
+          <span class="heatmap-legend"><span>少</span><span class="legend-cell l0"></span><span class="legend-cell l1"></span><span class="legend-cell l2"></span><span class="legend-cell l3"></span><span class="legend-cell l4"></span><span>多</span></span>
+        </div>
+        <div class="heatmap" id="heatmap"></div>
+      </div>
+    </div>
+
+    <!-- 分享弹窗 -->
+    <div class="modal-panel share-modal" id="share-modal" style="display:none">
+      <div class="modal-header">
+        <span class="modal-title">分享卡片</span>
+        <button class="modal-close">×</button>
+      </div>
+      <div class="share-tabs" id="share-tabs" data-scope="day">
+        <span class="share-thumb"></span>
+        <button class="share-tab active">今日</button>
+        <button class="share-tab">本周</button>
+      </div>
+      <div class="share-card" id="share-card">
+        <div class="share-card-header">
+          <span class="share-card-brand">学习时间记录</span>
+          <span class="share-card-date" id="share-date">06-30</span>
+        </div>
+        <div class="share-card-duration" id="share-duration">01:23:45</div>
+        <div class="share-card-label" id="share-label">今日学习时长</div>
+        <svg class="share-card-pet" viewBox="0 0 64 64">
+          <g class="pet-tail"><path d="M50 44 Q61 38 58 26" stroke="currentColor" stroke-width="7" fill="none" stroke-linecap="round"/></g>
+          <g><path d="M22 14 L17 3 L29 9 Z" fill="currentColor"/><path d="M42 14 L47 3 L35 9 Z" fill="currentColor"/><ellipse cx="32" cy="37" rx="21" ry="19" fill="currentColor"/><ellipse cx="32" cy="42" rx="13" ry="10" fill="rgba(255,255,255,0.28)"/><circle cx="25" cy="33" r="2.8" fill="#1a1f36"/><circle cx="39" cy="33" r="2.8" fill="#1a1f36"/><path d="M28 41 Q32 44 36 41" stroke="rgba(26,31,54,0.55)" stroke-width="1.8" fill="none" stroke-linecap="round"/></g>
+        </svg>
+        <div class="share-card-quote" id="share-quote">心若有所向，平凡亦有光。</div>
+        <div class="share-card-footer"><span>学习时间记录</span><span id="share-scope-label">今日 · 2026</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 收尾功能网格 -->
+  <div class="feature-grid" id="feature-grid"></div>
+
+  <!-- 字幕 -->
+  <div class="caption" id="caption"></div>
+
+  <!-- 水印 -->
+  <div class="watermark">Created by Huashu-Design</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ====== 时间轴配置 ======
+  var DURATION = 28;
+  var RING_CIRC = 402.12;
+
+  // 分镜时间表
+  var S = {
+    intro:  [0.0, 3.0],
+    start:  [3.0, 7.0],
+    pause:  [7.0, 10.0],
+    end:    [10.0, 13.6],
+    stats:  [13.6, 18.6],
+    share:  [18.6, 22.0],
+    theme:  [22.0, 25.4],
+    outro:  [25.4, 28.0]
+  };
+
+  // ====== 缓动 ======
+  var ease = {
+    expoOut: function (t) { return t >= 1 ? 1 : 1 - Math.pow(2, -10 * t); },
+    easeOut: function (t) { return 1 - (1 - t) * (1 - t); },
+    easeInOut: function (t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; },
+    overshoot: function (t) { var c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); }
+  };
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function map(t, t0, t1, a, b, e) {
+    var p = clamp((t - t0) / (t1 - t0), 0, 1);
+    if (e) p = e(p);
+    return lerp(a, b, p);
+  }
+  function inRange(t, r) { return t >= r[0] && t < r[1]; }
+  function fmtTime(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return pad(h) + ':' + pad(m) + ':' + pad(s);
+  }
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+  // ====== 数据 ======
+  var WEEK_BARS = [55, 80, 38, 92, 64, 100, 72]; // 7 天相对高度 %
+  var WEEK_LABELS = ['一', '二', '三', '四', '五', '六', '日'];
+  // 35 天热力图等级（5 行 × 7 列）
+  var HEATMAP = [
+    1, 2, 0, 3, 2, 1, 4,
+    2, 3, 1, 4, 3, 2, 3,
+    1, 4, 2, 3, 4, 3, 2,
+    3, 2, 4, 3, 2, 4, 3,
+    2, 3, 4, 2, 3, 4, 0
+  ];
+  var FEATURES = [
+    { name: '学习历史', icon: '<path d="M3 7h18M3 12h18M3 17h12"/>' },
+    { name: '数据统计', icon: '<line x1="6" y1="20" x2="6" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="14"/>' },
+    { name: '导出数据', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>' },
+    { name: '分享卡片', icon: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/>' },
+    { name: '时间区间', icon: '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>' },
+    { name: '学习目标', icon: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>' },
+    { name: '标签管理', icon: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>' },
+    { name: '我的徽章', icon: '<circle cx="12" cy="8" r="6"/><path d="M15.5 13L17 22l-5-3-5 3 1.5-9"/>' },
+    { name: '学习宠物', icon: '<path d="M7.5 10.5c0-2.8 2-5 4.5-5s4.5 2.2 4.5 5v2.3c0 2.4-2 4.4-4.5 4.4s-4.5-2-4.5-4.4z"/><path d="M8.7 7.1 6.6 4.8M15.3 7.1l2.1-2.3M10 11h.01M14 11h.01M10.5 14c.9.7 2.1.7 3 0"/>' },
+    { name: '每日寄语', icon: '<path d="M3 21l1.7-5.1A9 9 0 1 1 8.1 19.3z"/>' }
+  ];
+
+  // ====== DOM 引用 ======
+  var $ = function (id) { return document.getElementById(id); };
+  var body = document.body;
+  var stage = $('stage');
+  var appWindow = $('app-window');
+  var digits = $('digits');
+  var ringFg = $('ring-fg');
+  var ringWrapper = $('ring-wrapper');
+  var progressPercent = $('progress-percent');
+  var miniPercent = $('mini-percent');
+  var miniBar = $('mini-bar');
+  var statusDot = $('status-dot');
+  var petVisual = $('pet-visual');
+  var petExp = $('pet-exp');
+  var moodEl = $('mood'), energyEl = $('energy'), affectionEl = $('affection');
+  var petLevel = $('pet-level');
+  var quoteEl = $('quote');
+  var startBtn = $('start-btn'), pauseBtn = $('pause-btn'), endBtn = $('end-btn');
+  var themeBtn = $('theme-btn');
+  var badgeToast = $('badge-toast');
+  var caption = $('caption');
+  var titleOverlay = $('title-overlay');
+  var modalLayer = $('modal-layer');
+  var statsModal = $('stats-modal');
+  var shareModal = $('share-modal');
+  var featureGrid = $('feature-grid');
+  var shareTabs = $('share-tabs');
+  var shareDuration = $('share-duration');
+  var shareLabel = $('share-label');
+  var shareScopeLabel = $('share-scope-label');
+
+  // ====== 构建周柱状图 ======
+  var weekBars = [];
+  (function buildWeek() {
+    var chart = $('week-chart');
+    for (var i = 0; i < 7; i++) {
+      var wrap = document.createElement('div'); wrap.className = 'week-bar';
+      var fill = document.createElement('div'); fill.className = 'week-bar-fill';
+      fill.style.setProperty('--bar-h', '0%');
+      var lbl = document.createElement('div'); lbl.className = 'week-bar-label'; lbl.textContent = WEEK_LABELS[i];
+      wrap.appendChild(fill); wrap.appendChild(lbl);
+      chart.appendChild(wrap);
+      weekBars.push(fill);
+    }
+  })();
+
+  // ====== 构建热力图 ======
+  var heatCells = [];
+  (function buildHeat() {
+    var hm = $('heatmap');
+    for (var i = 0; i < 35; i++) {
+      var c = document.createElement('div');
+      c.className = 'heatmap-cell l' + HEATMAP[i];
+      c.style.setProperty('--cell-opacity', '0');
+      c.style.setProperty('--cell-scale', '0.6');
+      hm.appendChild(c);
+      heatCells.push(c);
+    }
+  })();
+
+  // ====== 构建功能网格 ======
+  var featureCards = [];
+  (function buildFeatures() {
+    FEATURES.forEach(function (f) {
+      var card = document.createElement('div'); card.className = 'feature-card';
+      card.innerHTML =
+        '<div class="fc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + f.icon + '</svg></div>' +
+        '<div class="fc-name">' + f.name + '</div>';
+      featureGrid.appendChild(card);
+      featureCards.push(card);
+    });
+  })();
+
+  // ====== stage 自适应缩放（浏览器查看用；录制时由 viewport 决定） ======
+  function fitStage() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    document.documentElement.style.setProperty('--stage-scale', s);
+  }
+  fitStage();
+  window.addEventListener('resize', fitStage);
+
+  // ====== 渲染函数（pure，按 t 决定 DOM 状态） ======
+  function render(t) {
+    t = clamp(t, 0, DURATION);
+    // ---------- 主题 ----------
+    var theme = 'light';
+    if (t >= S.theme[0]) {
+      if (t < 23.0) theme = 'dark';
+      else if (t < 24.2) theme = 'eyecare';
+      else theme = 'light';
+    }
+    if (body.dataset.theme !== theme) body.dataset.theme = theme;
+
+    // ---------- 窗口入场 ----------
+    var winOpacity = map(t, 0, 1.4, 0, 1, ease.expoOut);
+    var winScale = map(t, 0, 1.4, 0.9, 1, ease.expoOut);
+    if (inRange(t, S.outro)) {
+      // outro：窗口略缩小并上移，让位给功能网格
+      var op = map(t, S.outro[0], S.outro[0] + 0.8, 1, 0, ease.easeOut);
+      var sc = map(t, S.outro[0], S.outro[0] + 0.8, 1, 0.62, ease.expoOut);
+      winOpacity = op; winScale = sc;
+    }
+    appWindow.style.setProperty('--win-opacity', winOpacity);
+    appWindow.style.setProperty('--win-scale', winScale);
+
+    // ---------- 顶部标题（intro / outro） ----------
+    var titleOpacity = 0;
+    if (inRange(t, S.intro)) titleOpacity = map(t, 0.4, 1.6, 0, 1, ease.expoOut) * map(t, S.intro[1] - 0.5, S.intro[1], 1, 0, ease.easeInOut);
+    if (inRange(t, S.outro)) titleOpacity = map(t, S.outro[0] + 0.3, S.outro[0] + 1.3, 0, 1, ease.expoOut);
+    titleOverlay.style.setProperty('--title-opacity', titleOpacity);
+
+    // ---------- 计时器 & 进度环 ----------
+    // 目标：开始场景 0→42:18 (2538s)，目标 2h(7200s) → 35.25%
+    var seconds = 0;
+    var ringPct = 0;
+    if (inRange(t, S.start)) {
+      seconds = map(t, 3.3, 7.0, 0, 2538, ease.easeOut);
+    } else if (t >= S.start[1]) {
+      seconds = 2538;
+    }
+    ringPct = (seconds / 7200) * 100;
+    digits.textContent = fmtTime(seconds);
+    progressPercent.textContent = Math.round(ringPct);
+    miniPercent.textContent = Math.round(ringPct) + '%';
+    ringFg.style.strokeDashoffset = RING_CIRC * (1 - ringPct / 100);
+    miniBar.style.setProperty('--bar-width', ringPct + '%');
+    ringWrapper.classList.toggle('complete', ringPct >= 100);
+
+    // ---------- 会话状态：dot / 暂停 / 按钮 ----------
+    var sessionState = 'idle'; // idle | active | paused | ended
+    if (t < 3.3) sessionState = 'idle';
+    else if (t < 7.0) sessionState = 'active';
+    else if (t < 10.4) sessionState = 'paused';
+    else if (t < 10.9) sessionState = 'active';
+    else sessionState = 'ended';
+
+    statusDot.className = 'status-dot' +
+      (sessionState === 'active' ? ' active' : '') +
+      (sessionState === 'paused' ? ' paused' : '');
+    body.classList.toggle('session-paused', sessionState === 'paused');
+
+    // 按钮显隐：开始后显示 暂停|结束，结束后恢复只显示开始
+    var showControls = (t >= 3.3 && t < 11.0);
+    pauseBtn.classList.toggle('control-hidden', !showControls);
+    endBtn.classList.toggle('control-hidden', !showControls);
+    startBtn.classList.toggle('control-hidden', showControls);
+
+    // 按钮按压脉冲
+    startBtn.classList.toggle('pulse-press', inRange(t, [3.0, 3.5]));
+    pauseBtn.classList.toggle('pulse-press', inRange(t, [7.0, 7.5]));
+    endBtn.classList.toggle('pulse-press', inRange(t, [10.9, 11.4]));
+    themeBtn.classList.toggle('is-pressed', inRange(t, [22.0, 22.5]) || inRange(t, [23.0, 23.5]) || inRange(t, [24.2, 24.7]));
+
+    // ---------- 宠物状态 ----------
+    var petState = 'idle';
+    if (sessionState === 'active') petState = 'studying';
+    else if (sessionState === 'paused') petState = 'paused';
+    petVisual.setAttribute('data-state', petState);
+    petVisual.classList.toggle('is-celebrating', inRange(t, [11.0, 12.6]));
+
+    // 宠物经验/等级/心情随学习增长
+    var expPct = clamp(map(t, 3.3, 13.5, 12, 68), 12, 78);
+    petExp.style.setProperty('--exp-width', expPct + '%');
+    moodEl.style.setProperty('--stat', clamp(map(t, 3.3, 13.5, 55, 82), 0, 100) + '%');
+    energyEl.style.setProperty('--stat', clamp(map(t, 3.3, 13.5, 70, 48), 0, 100) + '%');
+    affectionEl.style.setProperty('--stat', clamp(map(t, 3.3, 13.5, 40, 76), 0, 100) + '%');
+    if (t >= 11.0 && t < 12.6) petLevel.textContent = 'Lv.6'; else petLevel.textContent = 'Lv.5';
+
+    // ---------- 徽章解锁 toast ----------
+    badgeToast.classList.toggle('show', inRange(t, [11.6, 13.4]));
+
+    // ---------- 弹窗：统计 ----------
+    var statsOpen = inRange(t, S.stats);
+    var shareOpen = inRange(t, S.share);
+    if (statsOpen) {
+      statsModal.style.display = '';
+      shareModal.style.display = 'none';
+      var sp = map(t, S.stats[0], S.stats[0] + 0.5, 0, 1, ease.expoOut);
+      var ep = map(t, S.stats[1] - 0.4, S.stats[1], 1, 0, ease.easeInOut);
+      var vis = clamp(sp * (inRange(t, [S.stats[1] - 0.4, S.stats[1]]) ? ep : 1), 0, 1);
+      modalLayer.style.setProperty('--modal-opacity', vis);
+      statsModal.style.setProperty('--modal-scale', lerp(0.94, 1, sp));
+      statsModal.style.setProperty('--modal-y', lerp(12, 0, sp) + 'px');
+      shareModal.style.setProperty('--modal-scale', 0.94);
+
+      // 统计数字滚动（14.8→16.6）
+      var cp = map(t, 14.8, 16.6, 0, 1, ease.expoOut);
+      $('ov-total').textContent = Math.round(lerp(0, 128, cp)) + 'h';
+      $('ov-streak').textContent = Math.round(lerp(0, 12, cp)) + ' 天';
+      $('ov-sessions').textContent = Math.round(lerp(0, 342, cp));
+
+      // 周柱状图生长（15.0→16.6，stagger）
+      for (var i = 0; i < 7; i++) {
+        var bp = clamp(map(t, 15.0 + i * 0.1, 15.0 + i * 0.1 + 0.7, 0, 1, ease.expoOut), 0, 1);
+        weekBars[i].style.setProperty('--bar-h', (WEEK_BARS[i] * bp) + '%');
+      }
+      // 热力图扫过（16.2→17.8，按列 stagger）
+      for (var j = 0; j < 35; j++) {
+        var col = j % 7;
+        var hp = clamp(map(t, 16.2 + col * 0.12, 16.2 + col * 0.12 + 0.5, 0, 1, ease.expoOut), 0, 1);
+        heatCells[j].style.setProperty('--cell-opacity', hp);
+        heatCells[j].style.setProperty('--cell-scale', lerp(0.5, 1, hp));
+      }
+    } else if (shareOpen) {
+      // ---------- 弹窗：分享 ----------
+      statsModal.style.display = 'none';
+      shareModal.style.display = '';
+      var ssp = map(t, S.share[0], S.share[0] + 0.5, 0, 1, ease.expoOut);
+      var sep = map(t, S.share[1] - 0.4, S.share[1], 1, 0, ease.easeInOut);
+      var svis = clamp(ssp * (inRange(t, [S.share[1] - 0.4, S.share[1]]) ? sep : 1), 0, 1);
+      modalLayer.style.setProperty('--modal-opacity', svis);
+      shareModal.style.setProperty('--modal-scale', lerp(0.94, 1, ssp));
+      shareModal.style.setProperty('--modal-y', lerp(12, 0, ssp) + 'px');
+      statsModal.style.setProperty('--modal-scale', 0.94);
+
+      // 今日 → 本周 切换（21.0）
+      var weekScope = t >= 21.0;
+      shareTabs.dataset.scope = weekScope ? 'week' : 'day';
+      shareDuration.textContent = weekScope ? '09:42:10' : '01:23:45';
+      shareLabel.textContent = weekScope ? '本周学习时长' : '今日学习时长';
+      shareScopeLabel.textContent = weekScope ? '本周 · 2026' : '今日 · 2026';
+    } else {
+      modalLayer.style.setProperty('--modal-opacity', 0);
+    }
+
+    // ---------- 功能网格（outro） ----------
+    var gridOpacity = 0;
+    if (inRange(t, S.outro)) {
+      gridOpacity = map(t, S.outro[0] + 0.4, S.outro[0] + 1.1, 0, 1, ease.expoOut);
+    }
+    featureGrid.style.setProperty('--grid-opacity', gridOpacity);
+    for (var k = 0; k < featureCards.length; k++) {
+      var fc = featureCards[k];
+      var appearAt = S.outro[0] + 0.6 + k * 0.07;
+      var fp = clamp(map(t, appearAt, appearAt + 0.5, 0, 1, ease.expoOut), 0, 1);
+      fc.style.setProperty('--fc-opacity', fp);
+      fc.style.setProperty('--fc-y', lerp(24, 0, fp) + 'px');
+      fc.style.setProperty('--fc-scale', lerp(0.92, 1, fp));
+    }
+
+    // ---------- 字幕 ----------
+    var cap = '';
+    var capOpacity = 0;
+    if (inRange(t, S.intro)) { cap = '<span class="accent">学习时间记录</span> · 专注每一刻的成长'; capOpacity = map(t, 0.6, 1.4, 0, 1, ease.expoOut) * map(t, S.intro[1] - 0.4, S.intro[1], 1, 0, ease.easeInOut); }
+    else if (inRange(t, S.start)) { cap = '一键开始记录 · 全局快捷键 <span class="accent">Ctrl+Alt+S</span>'; capOpacity = fadeInOut(t, S.start); }
+    else if (inRange(t, S.pause)) { cap = '随时暂停 · <span class="accent">Ctrl+Alt+P</span>'; capOpacity = fadeInOut(t, S.pause); }
+    else if (inRange(t, S.end)) { cap = '结束记录 · 见证每一份坚持'; capOpacity = fadeInOut(t, S.end); }
+    else if (inRange(t, S.stats)) { cap = '数据统计 · 看见时间的纹理'; capOpacity = fadeInOut(t, S.stats); }
+    else if (inRange(t, S.share)) { cap = '分享卡片 · 让记录被看见'; capOpacity = fadeInOut(t, S.share); }
+    else if (inRange(t, S.theme)) { cap = '三种主题 · 随心切换'; capOpacity = fadeInOut(t, S.theme); }
+    else if (inRange(t, S.outro)) { cap = '学习时间记录 · 让每一分钟都有回响'; capOpacity = map(t, S.outro[0] + 0.5, S.outro[0] + 1.2, 0, 1, ease.expoOut); }
+    if (caption.innerHTML !== cap) caption.innerHTML = cap;
+    caption.style.setProperty('--caption-opacity', capOpacity);
+  }
+
+  function fadeInOut(t, r) {
+    var a = map(t, r[0], r[0] + 0.4, 0, 1, ease.easeOut);
+    var b = map(t, r[1] - 0.4, r[1], 1, 0, ease.easeInOut);
+    return clamp(a, 0, 1) * clamp(b, 0, 1);
+  }
+
+  // ====== tick 引擎（遵循 animation-pitfalls §12 / §13） ======
+  var time = 0;
+  var playing = false;
+  var booted = false;
+  var lastTick = null;
+
+  function tick(now) {
+    // seek-render 模式：外部逐帧驱动，关闭自驱时钟
+    if (typeof window !== 'undefined' && window.__seekRender) {
+      window.__ready = true;
+      return;
+    }
+    if (!booted) {
+      booted = true;
+      lastTick = now;
+      window.__ready = true;          // 录屏起点 = 动画 t=0
+      render(0);
+      requestAnimationFrame(tick);
+      return;
+    }
+    var dt = (now - lastTick) / 1000;
+    lastTick = now;
+    if (playing) {
+      var nt = time + dt;
+      if (nt >= DURATION) {
+        // 录制时不循环，停于末帧；浏览器查看时循环
+        nt = (typeof window !== 'undefined' && window.__recording) ? (DURATION - 0.001) : 0;
+      }
+      time = nt;
+      render(time);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // __seek：供 render-video 矫正 + 逐帧截图调试用
+  window.__seek = function (t) {
+    time = clamp(t, 0, DURATION);
+    lastTick = performance.now();
+    render(time);
+  };
+
+  // ====== 启动 ======
+  if (typeof window !== 'undefined' && window.__seekRender) {
+    // seek-render 模式：冻结自驱时钟，仅就绪 + 渲染初帧，等外部 __seek 调用
+    document.fonts.ready.then(function () {
+      window.__ready = true;
+      render(0);
+    });
+  } else {
+    document.fonts.ready.then(function () {
+      render(0);
+      playing = true;
+      requestAnimationFrame(tick);
+    });
+  }
+})();
+</script>
+</body>
+</html>

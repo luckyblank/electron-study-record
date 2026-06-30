@@ -8,7 +8,8 @@ const {
   nativeImage,
   Notification,
   globalShortcut,
-  dialog
+  dialog,
+  screen
 } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
@@ -51,6 +52,11 @@ let words = []
 let isQuiting = false
 let pendingQuitResolve = null
 let updateInteractionState = 'normal'
+
+// 自定义系统级 Toast 窗口（单例复用）
+let toastWindow = null
+let toastHideTimer = null    // 隐藏动画完成后 hide() 的计时器
+let currentTheme = 'light'   // 当前主题，供 toast 窗口同步
 
 // 把 study_sessions 表里的时间字符串解析为 Date（中国时间语义）。
 // 新格式: "YYYY-MM-DD HH:mm:ss"，旧格式带 T 和 +08:00 / Z / 无后缀 也兼容。
@@ -222,6 +228,91 @@ function createWindow() {
   mainWindow = win
 }
 
+// =============== 自定义系统级 Toast 窗口 ===============
+// 独立的无边框透明、始终置顶窗口，完全用 CSS 美化、复刻 app 主题。
+// 单例复用：已展示中的通知会被快速淡出后展示新的。
+function createToastWindow() {
+  if (toastWindow && !toastWindow.isDestroyed()) return toastWindow
+  const display = screen.getPrimaryDisplay()
+  const { workArea } = display
+  const W = 332
+  const H = 108
+  const x = workArea.x + workArea.width - W - 12
+  const y = workArea.y + workArea.height - H - 12
+
+  toastWindow = new BrowserWindow({
+    width: W,
+    height: H,
+    x,
+    y,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    closable: false,
+    skipTaskbar: true,
+    show: false,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  })
+  toastWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+  toastWindow.loadFile('toast.html')
+  toastWindow.webContents.on('did-finish-load', () => {
+    toastWindow.webContents.send('toast:theme', currentTheme)
+  })
+  return toastWindow
+}
+
+function showThemedToast({ type = 'info', title = '', subtitle = '', petSvg = '', duration = 5000 } = {}) {
+  try {
+    if (!toastWindow || toastWindow.isDestroyed()) createToastWindow()
+    const win = toastWindow
+    // 清理可能残留的退场计时器（倒计时由 toast.html 内部管理）
+    if (toastHideTimer) { clearTimeout(toastHideTimer); toastHideTimer = null }
+
+    win.webContents.send('toast:show', { type, title, subtitle, petSvg, duration })
+    if (!win.isVisible()) win.showInactive()
+  } catch (e) {
+    log.error('[Toast] show 失败:', e && e.message)
+    // 回退到原生通知
+    fallbackNativeToast(title, subtitle)
+  }
+}
+
+function hideThemedToast() {
+  if (!toastWindow || toastWindow.isDestroyed()) return
+  try {
+    toastWindow.webContents.send('toast:hide')
+    // 等待退场动画（260ms）后再 hide，保留窗口实例复用
+    if (toastHideTimer) clearTimeout(toastHideTimer)
+    toastHideTimer = setTimeout(() => {
+      if (toastWindow && !toastWindow.isDestroyed()) toastWindow.hide()
+    }, 320)
+  } catch (e) { /* 静默 */ }
+  toastShowTimer = null
+}
+
+function fallbackNativeToast(title, body) {
+  if (typeof Notification !== 'function' || !Notification.isSupported()) return
+  try {
+    const n = new Notification({
+      title: title || '学习时间记录',
+      body: body || '',
+      silent: true,
+      icon: path.join(__dirname, 'logo.ico')
+    })
+    n.show()
+  } catch (e) { /* 静默 */ }
+}
+
 function isUpdateInteractionLocked() {
   return updateInteractionState === 'prompt' || updateInteractionState === 'installing'
 }
@@ -278,6 +369,8 @@ function createTray(win) {
       appTray.destroy()
       appTray = null
     }
+    // 从托盘/最小化恢复显示后，任务栏 thumbar 按钮会被系统清空，需重新设置
+    updateThumbarButtons(win)
   })
 }
 
@@ -1551,33 +1644,42 @@ ipcMain.handle('share:save-image', async (event, { dataUrl, defaultName = 'study
 ipcMain.handle('app:get-version', () => app.getVersion())
 
 // =============== IPC: 通知 ===============
+// 走自定义系统级 Toast 窗口（美化、复刻 app 主题）；失败回退原生通知。
 ipcMain.handle('app:notify', (event, opts = {}) => {
   try {
-    if (typeof Notification !== 'function' || !Notification.isSupported()) {
-      log.warn('[Notify] 系统不支持原生通知')
-      return false
-    }
-    const notif = new Notification({
+    const type = opts.type || 'info'
+    const duration = Number(opts.duration) > 0 ? Number(opts.duration) : 5000
+    showThemedToast({
+      type,
       title: opts.title || '学习时间记录',
-      body: opts.body || '',
-      silent: !!opts.silent,
-      icon: path.join(__dirname, 'logo.ico')
+      subtitle: opts.body || '',
+      petSvg: opts.petSvg || '',
+      duration
     })
-    notif.on('failed', (e, err) => log.warn('[Notify] failed:', err))
-    notif.show()
     return true
   } catch (e) {
     log.error('[Notify] 弹出失败:', e && e.message)
+    fallbackNativeToast(opts.title || '学习时间记录', opts.body || '')
     return false
   }
 })
 
+// toast 窗口倒计时结束（或悬停后剩余时间走完）时主动请求隐藏
+ipcMain.on('toast:request-hide', () => {
+  hideThemedToast()
+})
+
 // =============== IPC: 主题 ===============
 ipcMain.handle('app:set-theme', async (event, theme) => {
+  currentTheme = theme || 'light'
   await runSql(
     'INSERT OR REPLACE INTO user_config(key, value) VALUES (?, ?)',
-    ['theme', theme]
+    ['theme', currentTheme]
   )
+  // 同步到 toast 窗口（若已创建）
+  if (toastWindow && !toastWindow.isDestroyed()) {
+    toastWindow.webContents.send('toast:theme', currentTheme)
+  }
   return true
 })
 
@@ -1604,6 +1706,11 @@ app.whenReady().then(async () => {
     }
     await initDatabase()
     await loadWordsFromDB()
+    // 读取持久化主题，供 toast 窗口同步
+    try {
+      const rows = await getAll('SELECT value FROM user_config WHERE key = ?', ['theme'])
+      if (rows && rows[0] && rows[0].value) currentTheme = rows[0].value
+    } catch (e) { /* 静默，使用默认 light */ }
     createWindow()
     initAutoUpdater(() => mainWindow)
 

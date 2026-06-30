@@ -38,9 +38,12 @@ nodejs：V20.12.1
     "electron": "^36.2.1",
     "electron-builder": "^26.0.12",
     "electron-rebuild": "^3.2.9",
+    "gsap": "^3.15.0",
     "nodemon": "^3.1.10"
   }
 ```
+
+> GSAP 的 UMD 构建已复制到 `vendor/gsap.min.js` 随包发布（渲染端通过 `<script>` 引入，无需 `require`）。升级 gsap 后运行 `npm run sync-gsap` 刷新该文件。
 
 
 
@@ -51,6 +54,7 @@ nodejs：V20.12.1
 ```json
   "scripts": {
     "start": "nodemon --exec electron . --dev",
+    "sync-gsap": "node -e \"require('fs').copyFileSync('node_modules/gsap/dist/gsap.min.js','vendor/gsap.min.js')\"",
     "prepare-notes": "node scripts/prepare-release-notes.js",
     "build": "npm run prepare-notes && electron-builder",
     "rebuild-native": "npx electron-rebuild -f -w sqlite3 -v 36.2.1 --arch=x64",
@@ -93,6 +97,57 @@ npm run release
 | 6    | Ctrl+Alt+Q | 退出程序     |
 | 7    | Ctrl+Alt+M | 切换迷你模式 |
 | 8    | Ctrl+Alt+T | 切换主题     |
+
+
+
+## 待发布改动（v1.0.3 候选）
+
+### 🎬 GSAP 动画系统重设计
+
+引入 GSAP 3.15.0 重写关键动画时刻，替代原先 `setTimeout` + `void offsetWidth` + class 切换的脆弱模式。
+
+- **新增 `animations.js` 动画工具模块**（暴露 `window.Anim`，GSAP 未加载时降级为 no-op）
+- **Modal 退出动画**：补齐此前缺失的关闭动画，支持动画中途打断/重入
+- **Toast / 宠物 celebrate·levelup / 徽章解锁 / 进度环** 全部改为 GSAP timeline 驱动
+- 进度环支持百分比数字计数动画
+- `prefers-reduced-motion` 适配
+- 保留 CSS 负责的 hover 微过渡与循环 keyframes（呼吸/眨眼/spin）不变
+- gsap 作为 `devDependencies`，UMD 构建复制到 `vendor/gsap.min.js`，新增 `npm run sync-gsap` 用于升级后刷新
+
+详见 `plan/GSAP动画系统重设计计划.md`
+
+### 🔔 自定义系统级 Toast 通知窗口
+
+开始/结束记录通知从原生 OS 通知改为**自定义美化的系统级浮层**，完全复刻 app 主题（蓝紫渐变 + 玻璃拟态 + 三主题适配）。
+
+- **独立无边框透明窗口**：`alwaysOnTop` 置顶、`skipTaskbar` 不进任务栏，定位屏幕右下角，单例复用
+- `toast.html` 单独文件，内联 CSS + inline SVG 图标，亮/暗/护眼三主题自动适配
+- 入场从右滑入、退场向右滑出，`cubic-bezier(0.16,1,0.3,1)` 缓动
+- 失败自动回退原生 `Notification`
+- **结束记录通知逻辑**：`endSession({ silent })`，仅「结束按钮点击 / Ctrl+Alt+E」弹通知；「Ctrl+Alt+Q 安全退出 / 更新安装」静默不弹
+- 文件选择器（`dialog.showSaveDialog`）与启动错误弹窗（`dialog.showErrorBox`）保持原生
+
+详见 `plan/自定义系统级Toast通知窗口实施计划.md`
+
+### 🐾 Toast 窗口增强：宠物形象 + 进度条 + 悬停暂停 + 关闭按钮
+
+在自定义 Toast 窗口基础上进一步完善通知体验：
+
+- **暂停/恢复记录也走系统通知**：此前只在应用内弹 toast，现统一为系统级 Toast（5000ms）
+- **弹窗显示当前宠物形象**：左侧渲染当前宠物 SVG（`renderPetSvg` 注入 payload），颜色随主题自动适配
+- **5 秒倒计时 + 底部进度条**：`scaleX 1→0` CSS animation 与倒计时同步
+- **鼠标悬停暂停**：`mouseenter` 暂停倒计时与进度条，`mouseleave` 按剩余时间续跑（JS `Date.now()` 记 elapsed）
+- **标题去重**：app 名作品牌小字标签，`title` 承载事件消息（如「已结束记录」），副标题承载「今日累计 XX」
+- **右上角关闭按钮**：× 按钮，hover 走 accent 反馈，点击立即隐藏
+- **窗口尺寸** 288×76 → 332×108，卡片高度 64→96px
+- 倒计时从主进程下放到 `toast.html` 内部，主进程通过 `toast:request-hide` IPC 接收隐藏请求
+
+详见 `plan/Toast窗口增强-宠物进度条悬停暂停关闭按钮.md`
+
+### 🐛 问题修复
+
+- **任务栏 thumbar 图标丢失**：窗口从托盘恢复（`win.show()`）后任务栏缩略图按钮被系统清空且不自动重建，在 `'show'` 事件中重新调用 `updateThumbarButtons(win)` 修复
+- **通知背景透字**：Toast 卡片背景由半透明 `rgba` 改为不透明纯色，避免透出背后内容
 
 
 
@@ -240,8 +295,19 @@ npm run release
 - 一个组件需要新档位时，先评估是否能就近映射到已有 token；只有真的不够才加新 token
 
 ### Toast / 通知
-- `showToast(text, type, duration, useSystemNotify)` —— `useSystemNotify=true` 只用于「记录相关」事件（开始/结束 session、跨过 2h 等需要离开窗口也看得到的）
+- `showToast(text, type, duration, useSystemNotify, subtitle)` —— `useSystemNotify=true` 走系统级 Toast（开始/结束/暂停/恢复 session、跨过 2h 等需要离开窗口也看得到的）；`subtitle` 为可选副标题（如「今日累计 XX」）
+- **标题层级**：app 名「学习时间记录」作 toast 顶部小字品牌标签，`title` 承载事件消息，`subtitle` 承载次要信息——不要再用「学习时间记录」做 title，否则与品牌标签重复
+- **当前宠物形象**：`showToast(..., true)` 时自动调用 `buildCurrentPetSvg()` 注入 `petSvg`，toast 左侧渲染。SVG 用的 CSS 变量在 `toast.html :root` 已定义，三主题自动适配
 - 同一时段避免重复弹两条：1h toast 在 `sec >= 2h` 时**自动屏蔽**，把提醒权交给 `maybeNotifyHourly`（每 2h 一次，按日去重）
+- **系统级 Toast 倒计时**：5s 倒计时 + 底部进度条，**倒计时逻辑在 `toast.html` 内部**（非主进程），鼠标悬停暂停、移出续跑；走完发 `toast:request-hide` IPC 触发主进程隐藏。右上角 × 按钮可立即关闭
+- **结束记录通知逻辑**：`endSession({ silent })` —— 仅「结束按钮 / Ctrl+Alt+E」(`silent=false`) 弹通知；「安全退出 Ctrl+Alt+Q / 更新安装」(`silent=true`) 静默。**改动 endSession 调用点时务必确认 silent 取值**
+- 动画走 `animations.js` 的 `window.Anim`（GSAP）；GSAP 未加载时降级为 CSS 过渡
+- 任务栏 thumbar 按钮在窗口 `hide()` 到托盘后会被系统清空，恢复时需在 `'show'` 事件重新 `updateThumbarButtons(win)`
+
+### GSAP 动画 / vendor
+- GSAP 作为 `devDependencies`，UMD 构建复制到 `vendor/gsap.min.js` 随包发布（渲染端 `<script>` 引入）
+- 升级 gsap 后必须运行 `npm run sync-gsap` 刷新 `vendor/gsap.min.js`，否则渲染端仍是旧版本
+- 动画工具集中在 `animations.js`（`window.Anim`）；新增动画优先复用已有 `Anim.modal/toast/badge/pet/progressRing` 方法
 
 ### 自动更新
 - 入口在 `auto-updater.js`，使用 `electron-updater`。**禁用自动下载和退出时自动安装**，所有动作走用户确认

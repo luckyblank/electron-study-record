@@ -238,10 +238,14 @@ function updateProgressRing(currentSec, goalSec) {
 
   const ratio = Math.min(currentSec / goalSec, 1)
   const offset = PROGRESS_RING_CIRCUMFERENCE * (1 - ratio)
-  ring.style.strokeDashoffset = offset
-
   const percent = Math.round(ratio * 100)
-  percentEl.textContent = `${percent}%`
+
+  if (window.Anim) {
+    Anim.progressRing(ring, offset, percentEl, percent)
+  } else {
+    ring.style.strokeDashoffset = offset
+    percentEl.textContent = `${percent}%`
+  }
 
   if (ratio >= 1) {
     wrapper.classList.add('complete')
@@ -402,7 +406,7 @@ async function maybeNotifyHourly(todaySeconds) {
     if (state.date !== statKey) state = { date: statKey, count: 0 }
 
     if (count > state.count) {
-      showToast(`已学习超 ${count * 2} 小时啦，请休息一会哦~`, 'info', 6000, true)
+      showToast(`已学习超 ${count * 2} 小时啦，请休息一会哦~`, 'warning', 5000, true)
       state.count = count
       await window.studyRecord.setConfig('notified_over_2h_state', JSON.stringify(state))
     }
@@ -987,7 +991,7 @@ async function startSession() {
       petManager.startEnergyDrain()
     }
 
-    showToast('▶ 已开始记录', 'success', 2200, true)
+    showToast('已开始记录', 'success', 5000, true)
   } catch (e) {
     console.error('[startSession] 失败:', e)
     console.error('[startSession] stack:', e && e.stack)
@@ -1015,7 +1019,7 @@ async function pauseSession() {
       petManager.playAnimation('confused')
       petManager.startEnergyRecovery()
     }
-    showToast('已暂停记录', 'info', 1600)
+    showToast('已暂停记录', 'warning', 5000, true)
   } catch (e) {
     showToast('暂停失败: ' + (e && e.message ? e.message : e), 'warning', 3000)
   } finally {
@@ -1046,7 +1050,7 @@ async function resumeSession() {
       petManager.playAnimation('excited')
       petManager.startEnergyDrain()
     }
-    showToast('已继续记录', 'success', 1600)
+    showToast('已继续记录', 'success', 5000, true)
   } catch (e) {
     showToast('继续失败: ' + (e && e.message ? e.message : e), 'warning', 3000)
   } finally {
@@ -1060,7 +1064,7 @@ function togglePauseSession() {
   else pauseSession()
 }
 
-async function endSession() {
+async function endSession({ silent = false } = {}) {
   if (sessionOpLock) return
   if (!currentSessionId) return
   sessionOpLock = true
@@ -1111,7 +1115,9 @@ async function endSession() {
         if (!currentSessionId) petManager.setState(PET_STATES.IDLE)
       }, 3600)
     }
-    showToast('⏹ 已结束记录', 'info', 2200, true)
+    const todayDigits = (document.querySelector('#today-duration .digits') || {}).textContent || ''
+    const endSubtitle = todayDigits ? `今日累计 ${todayDigits}` : '本次记录已保存'
+    if (!silent) showToast('已结束记录', 'info', 5000, true, endSubtitle)
   } catch (e) {
     console.error('[endSession] 失败:', e)
     console.error('[endSession] stack:', e && e.stack)
@@ -1123,14 +1129,27 @@ async function endSession() {
 }
 
 // ---------- Toast 通知 ----------
-// useSystemNotify=true 时走系统通知（仅用于"记录相关"事件），其他一律页面内 toast
-async function showToast(text, type = 'info', duration = 3000, useSystemNotify = false) {
+// useSystemNotify=true 时走自定义系统级 Toast 窗口（开始/结束记录等事件），其他一律页面内 toast
+// 构造当前宠物 SVG，注入通知 payload（toast 窗口复用同一套 CSS 变量，颜色自动匹配主题）
+function buildCurrentPetSvg() {
+  try {
+    if (typeof petManager === 'undefined' || !petManager || !petManager.petState) return ''
+    const petId = petManager.petState.activePetId || 'cat'
+    const level = (petManager.activePet && petManager.activePet.level) || 1
+    const stage = getPetStage(level)
+    return renderPetSvg(petId, stage)
+  } catch (e) { return '' }
+}
+
+async function showToast(text, type = 'info', duration = 3000, useSystemNotify = false, subtitle = '') {
   if (useSystemNotify && window.studyRecord && window.studyRecord.notify) {
     try {
       await window.studyRecord.notify({
-        title: '学习时间记录',
-        body: text,
-        silent: true
+        title: text,
+        body: subtitle,
+        type,
+        duration,
+        petSvg: buildCurrentPetSvg()
       })
       return
     } catch (e) { /* 回退到页面 toast */ }
@@ -1154,12 +1173,19 @@ async function showToast(text, type = 'info', duration = 3000, useSystemNotify =
   toast.querySelector('.toast-text').textContent = text
   container.appendChild(toast)
 
-  void toast.offsetWidth
-  toast.classList.add('show')
+  if (window.Anim) {
+    Anim.toast.show(toast)
+  } else {
+    toast.classList.add('show')
+  }
 
   setTimeout(() => {
-    toast.classList.remove('show')
-    setTimeout(() => toast.remove(), 240)
+    if (window.Anim) {
+      Anim.toast.hide(toast, () => toast.remove())
+    } else {
+      toast.classList.remove('show')
+      setTimeout(() => toast.remove(), 240)
+    }
   }, duration)
 }
 
@@ -1183,20 +1209,38 @@ function resetScrollPosition(root) {
 function showModal(id) {
   const el = document.getElementById(id)
   if (!el) return
+  // 打断进行中的退出动画：撤销 hide 的计数自减
+  const wasHiding = el.dataset.hiding === '1'
   const wasHidden = el.classList.contains('hidden')
+  if (wasHiding) {
+    delete el.dataset.hiding
+    activeModalCount++
+  } else if (wasHidden) {
+    activeModalCount++
+  }
   el.classList.remove('hidden')
-  if (wasHidden) activeModalCount++
   document.body.classList.add('modal-open')
   resetScrollPosition(el)
+  if (window.Anim) Anim.modal.show(el)
 }
 
 function hideModal(id) {
   const el = document.getElementById(id)
-  if (!el || el.classList.contains('hidden')) return
-  el.classList.add('hidden')
+  if (!el || el.classList.contains('hidden') || el.dataset.hiding === '1') return
+  el.dataset.hiding = '1'
   activeModalCount = Math.max(0, activeModalCount - 1)
   if (activeModalCount === 0) {
     document.body.classList.remove('modal-open')
+  }
+  // 退出动画完成后再加 hidden（GSAP 不可用时立即隐藏）
+  if (window.Anim) {
+    Anim.modal.hide(el, () => {
+      el.classList.add('hidden')
+      delete el.dataset.hiding
+    })
+  } else {
+    el.classList.add('hidden')
+    delete el.dataset.hiding
   }
 }
 
@@ -1286,7 +1330,7 @@ async function setUpdateInteractionState(state) {
 async function prepareForUpdateInstall(downloadingText) {
   if (!currentSessionId) return true
   if (downloadingText) downloadingText.textContent = '正在结束当前记录...'
-  await endSession()
+  await endSession({ silent: true })
   return !currentSessionId
 }
 
@@ -1834,12 +1878,20 @@ function showBadgeUnlock(badge) {
   document.getElementById('unlock-name').textContent = badge.name
   document.getElementById('unlock-desc').textContent = badge.desc
   toast.classList.remove('hidden')
-  void toast.offsetWidth
-  toast.classList.add('show')
-  setTimeout(() => {
-    toast.classList.remove('show')
-    setTimeout(() => toast.classList.add('hidden'), 400)
-  }, 3500)
+  const icon = toast.querySelector('.badge-unlock-icon')
+  const texts = Array.from(toast.querySelectorAll('.badge-unlock-title, .badge-unlock-name, .badge-unlock-desc'))
+  if (window.Anim) {
+    Anim.badge.unlock(toast, null, icon, texts)
+    setTimeout(() => {
+      Anim.badge.hide(toast, () => toast.classList.add('hidden'))
+    }, 3500)
+  } else {
+    toast.classList.add('show')
+    setTimeout(() => {
+      toast.classList.remove('show')
+      setTimeout(() => toast.classList.add('hidden'), 400)
+    }, 3500)
+  }
 }
 
 // ---------- 学习宠物 ----------
@@ -2117,19 +2169,27 @@ class PetManager {
     const visual = document.getElementById('pet-visual')
     if (!visual) return
     if (type === 'celebrate') {
-      visual.classList.remove('is-celebrating')
-      void visual.offsetWidth
-      visual.classList.add('is-celebrating')
+      if (window.Anim) {
+        Anim.pet.celebrate(visual)
+      } else {
+        visual.classList.remove('is-celebrating')
+        void visual.offsetWidth
+        visual.classList.add('is-celebrating')
+        setTimeout(() => visual.classList.remove('is-celebrating'), 900)
+      }
       this.spawnParticles(['✦', '•', '+'], 10)
       if (params.exp) this.spawnExpPop(`+${params.exp} EXP`)
-      setTimeout(() => visual.classList.remove('is-celebrating'), 900)
     } else if (type === 'levelup') {
-      visual.classList.remove('is-level-up')
-      void visual.offsetWidth
-      visual.classList.add('is-level-up')
+      if (window.Anim) {
+        Anim.pet.levelup(visual)
+      } else {
+        visual.classList.remove('is-level-up')
+        void visual.offsetWidth
+        visual.classList.add('is-level-up')
+        setTimeout(() => visual.classList.remove('is-level-up'), 1700)
+      }
       this.spawnParticles(['Lv', '✦', '↑'], 12)
       this.showSpeechBubble('升级了！')
-      setTimeout(() => visual.classList.remove('is-level-up'), 1700)
     } else if (type === 'interact') {
       this.spawnParticles(['♥', '♡'], 6)
     } else if (type === 'excited') {
@@ -2143,6 +2203,8 @@ class PetManager {
     const visual = document.getElementById('pet-visual')
     if (!visual) return
     const rect = visual.getBoundingClientRect()
+    if (window.Anim) { Anim.pet.particles(symbols, count, rect); return }
+    // 回退：CSS keyframe 驱动
     for (let i = 0; i < count; i++) {
       const el = document.createElement('div')
       el.className = 'pet-particle'
@@ -2159,6 +2221,7 @@ class PetManager {
     const visual = document.getElementById('pet-visual')
     if (!visual) return
     const rect = visual.getBoundingClientRect()
+    if (window.Anim) { Anim.pet.expPop(text, rect); return }
     const el = document.createElement('div')
     el.className = 'pet-exp-pop'
     el.textContent = text
@@ -3191,9 +3254,9 @@ function bindGlobalShortcuts() {
       const btn = document.getElementById('pause-btn')
       if (btn && !btn.disabled) togglePauseSession()
     } else if (action === 'end-and-quit') {
-      // 安全退出：先结束 session 再确认
+      // 安全退出：先结束 session 再确认（静默，不弹结束通知）
       if (currentSessionId) {
-        try { await endSession() } catch (e) {}
+        try { await endSession({ silent: true }) } catch (e) {}
       }
       window.studyRecord.confirmSessionEndedForQuit()
     } else if (action === 'toggleMiniMode') {

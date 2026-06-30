@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';">
+<title>通知</title>
+<style>
+  /* 设计 token 忠实复刻自 styles.css，三主题（亮/暗/护眼）自动适配 */
+  :root {
+    --bg-panel: #ffffff;
+    --text-primary: #1a1f36;
+    --text-secondary: #5e6480;
+    --text-muted: #8e94ab;
+    --accent: #6a84e6;
+    --accent-2: #936ae6;
+    --accent-soft: rgba(106, 132, 230, 0.14);
+    --accent-gradient: linear-gradient(135deg, #6a84e6 0%, #936ae6 100%);
+    --success: #38b978;
+    --success-soft: rgba(56, 185, 120, 0.14);
+    --warning: #e67c46;
+    --warning-soft: rgba(230, 124, 70, 0.14);
+    --border: rgba(130, 150, 190, 0.28);
+    --shadow: 0 18px 50px rgba(20, 40, 80, 0.24), 0 4px 14px rgba(20, 40, 80, 0.12);
+    --radius: 14px;
+    color-scheme: light;
+  }
+  body[data-theme="dark"] {
+    --bg-panel: #2a3048;
+    --text-primary: #e4eaf7;
+    --text-secondary: #a0a8c2;
+    --text-muted: #6a7296;
+    --accent: #82a0ff;
+    --accent-2: #b48aff;
+    --accent-soft: rgba(130, 160, 255, 0.18);
+    --accent-gradient: linear-gradient(135deg, #82a0ff 0%, #b48aff 100%);
+    --warning: #f09a5f;
+    --warning-soft: rgba(240, 154, 95, 0.18);
+    --border: rgba(255, 255, 255, 0.12);
+    --shadow: 0 18px 50px rgba(0, 0, 0, 0.50), 0 4px 14px rgba(0, 0, 0, 0.34);
+    color-scheme: dark;
+  }
+  body[data-theme="eyecare"] {
+    --bg-panel: #f2faee;
+    --text-primary: #263822;
+    --text-secondary: #4a5e44;
+    --text-muted: #778e72;
+    --accent: #5a8a4f;
+    --accent-2: #7aa66e;
+    --accent-soft: rgba(90, 138, 79, 0.16);
+    --accent-gradient: linear-gradient(135deg, #5a8a4f 0%, #7aa66e 100%);
+    --warning: #c77936;
+    --warning-soft: rgba(199, 121, 54, 0.16);
+    --border: rgba(80, 110, 70, 0.22);
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    user-select: none;
+    font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .toast-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 96px;
+    margin: 6px;
+    padding: 0 14px 0 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    opacity: 0;
+    transform: translateX(28px) scale(0.96);
+    transition: opacity 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform, opacity;
+  }
+  .toast-card.show {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  .toast-card.hide {
+    opacity: 0;
+    transform: translateX(28px) scale(0.96);
+    transition: opacity 0.26s cubic-bezier(0.4, 0, 1, 1),
+                transform 0.26s cubic-bezier(0.4, 0, 1, 1);
+  }
+
+  /* 左侧主色渐变条已移除（用户要求左边无边框颜色） */
+
+  /* 宠物区 */
+  .toast-pet {
+    flex: none;
+    width: 56px;
+    height: 56px;
+    margin: 0 12px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-soft);
+  }
+  .toast-pet svg { width: 44px; height: 44px; display: block; }
+  .toast-card.type-success .toast-pet { background: var(--success-soft); }
+  .toast-card.type-warning .toast-pet { background: var(--warning-soft); }
+  /* 兜底：无宠物 SVG 时显示一个小图标点 */
+  .toast-pet-empty {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent);
+  }
+  .toast-card.type-success .toast-pet-empty { background: var(--success); }
+  .toast-card.type-warning .toast-pet-empty { background: var(--warning); }
+
+  /* 文本区 */
+  .toast-text-area {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-right: 20px; /* 给右上角关闭按钮留出空间，避免文字被遮挡 */
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .toast-app-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+    margin-bottom: 1px;
+  }
+  .toast-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .toast-subtitle {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .toast-subtitle:empty { display: none; }
+
+  /* 右上角关闭按钮 */
+  .toast-close {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0.45;
+    z-index: 3;
+    transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+                background 0.18s ease, color 0.18s ease;
+  }
+  .toast-close svg { width: 11px; height: 11px; display: block; }
+  .toast-close:hover {
+    opacity: 1;
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  /* 底部进度条 */
+  .toast-progress {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2.5px;
+    background: transparent;
+    overflow: hidden;
+  }
+  .toast-progress-fill {
+    height: 100%;
+    width: 100%;
+    background: var(--accent-gradient);
+    opacity: 0.7;
+    transform-origin: left center;
+    animation: toast-progress-shrink 5000ms linear forwards;
+  }
+  .toast-card.type-success .toast-progress-fill { background: var(--success); }
+  .toast-card.type-warning .toast-progress-fill { background: var(--warning); }
+  .toast-progress-fill.paused { animation-play-state: paused; }
+  .toast-progress-fill.idle { animation: none; width: 100%; opacity: 0.35; }
+  @keyframes toast-progress-shrink {
+    from { transform: scaleX(1); }
+    to   { transform: scaleX(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toast-card, .toast-card.show, .toast-card.hide { transition-duration: 0.01ms !important; }
+    .toast-progress-fill { animation-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+  <div class="toast-card" id="card">
+    <div class="toast-pet" id="pet"></div>
+    <div class="toast-text-area">
+      <div class="toast-app-name" id="appName"></div>
+      <div class="toast-title" id="title"></div>
+      <div class="toast-subtitle" id="subtitle"></div>
+    </div>
+    <button class="toast-close" id="closeBtn" type="button" aria-label="关闭通知">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="6" y1="18" x2="18" y2="6"></line></svg>
+    </button>
+    <div class="toast-progress" aria-hidden="true">
+      <div class="toast-progress-fill" id="progress"></div>
+    </div>
+  </div>
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const card = document.getElementById('card');
+    const petEl = document.getElementById('pet');
+    const appNameEl = document.getElementById('appName');
+    const titleEl = document.getElementById('title');
+    const subEl = document.getElementById('subtitle');
+    const progressEl = document.getElementById('progress');
+    const closeBtn = document.getElementById('closeBtn');
+
+    const APP_NAME = '学习时间记录';
+
+    // 可暂停/续跑的倒计时：CSS animation 驱动进度条视觉，JS 计时驱动 hide 触发
+    let hideTimer = null;
+    let startTime = 0;       // 当前倒计时的起点（含已用时间偏移）
+    let totalDuration = 5000; // 本次通知总时长
+    let isPaused = false;
+    let elapsedBeforePause = 0; // 暂停时已用时
+
+    function clearHideTimer() {
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    }
+
+    function startCountdown(duration) {
+      clearHideTimer();
+      totalDuration = duration;
+      startTime = Date.now();
+      isPaused = false;
+      hideTimer = setTimeout(() => {
+        ipcRenderer.send('toast:request-hide');
+      }, duration);
+    }
+
+    function pauseCountdown() {
+      if (isPaused) return;
+      isPaused = true;
+      elapsedBeforePause = Date.now() - startTime;
+      clearHideTimer();
+      progressEl.classList.add('paused');
+    }
+
+    function resumeCountdown() {
+      if (!isPaused) return;
+      isPaused = false;
+      const remaining = Math.max(0, totalDuration - elapsedBeforePause);
+      startTime = Date.now() - elapsedBeforePause;
+      progressEl.classList.remove('paused');
+      clearHideTimer();
+      hideTimer = setTimeout(() => {
+        ipcRenderer.send('toast:request-hide');
+      }, remaining);
+    }
+
+    ipcRenderer.on('toast:show', (e, data) => {
+      // 重置状态
+      clearHideTimer();
+      isPaused = false;
+      card.classList.remove('hide', 'show');
+
+      const type = data.type || 'info';
+      card.classList.remove('type-success', 'type-info', 'type-warning');
+      card.classList.add('type-' + type);
+
+      // 宠物 SVG
+      petEl.innerHTML = '';
+      if (data.petSvg) {
+        petEl.innerHTML = data.petSvg;
+      } else {
+        const dot = document.createElement('div');
+        dot.className = 'toast-pet-empty';
+        petEl.appendChild(dot);
+      }
+
+      appNameEl.textContent = APP_NAME;
+      titleEl.textContent = data.title || '';
+      subEl.textContent = data.subtitle || '';
+
+      // 重启进度条动画：移除再加触发重新开始
+      progressEl.classList.remove('paused', 'idle');
+      progressEl.style.animation = 'none';
+      // 强制重排后重新启用动画
+      void progressEl.offsetWidth;
+      progressEl.style.animation = '';
+
+      const duration = Number(data.duration) > 0 ? Number(data.duration) : 5000;
+      // 同步进度条时长
+      progressEl.style.animationDuration = duration + 'ms';
+
+      // 入场
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => card.classList.add('show'));
+      });
+
+      // 入场动画（320ms）结束后开始倒计时（停顿期）
+      setTimeout(() => {
+        startCountdown(duration);
+      }, 320);
+    });
+
+    ipcRenderer.on('toast:hide', () => {
+      clearHideTimer();
+      card.classList.remove('show');
+      card.classList.add('hide');
+      progressEl.classList.add('idle');
+    });
+
+    ipcRenderer.on('toast:theme', (e, theme) => {
+      document.body.setAttribute('data-theme', theme || 'light');
+    });
+
+    // 鼠标悬停：暂停倒计时与进度条；移出：续跑
+    card.addEventListener('mouseenter', pauseCountdown);
+    card.addEventListener('mouseleave', resumeCountdown);
+
+    // 右上角关闭按钮：立即隐藏（不等倒计时）
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearHideTimer();
+      ipcRenderer.send('toast:request-hide');
+    });
+  </script>
+</body>
+</html>

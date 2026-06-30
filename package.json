@@ -1,13 +1,14 @@
 {
   "name": "study-time-record",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "用于统计每日学习时长的应用",
   "main": "main.js",
   "scripts": {
     "start": "nodemon --exec electron . --dev",
+    "sync-gsap": "node -e \"require('fs').copyFileSync('node_modules/gsap/dist/gsap.min.js','vendor/gsap.min.js')\"",
     "prepare-notes": "node scripts/prepare-release-notes.js",
     "build": "npm run prepare-notes && electron-builder",
-    "rebuild-native": "npx electron-rebuild -f -w sqlite3 -v 36.2.1 --arch=x64",
+    "rebuild-native": "npx electron-rebuild -f -w sqlite3 --arch=x64",
     "dist": "npm run rebuild-native && npm run build",
     "upload": "node scripts/upload-release.js",
     "release": "npm run dist && npm run upload"
@@ -43,7 +44,7 @@
     },
     "publish": [
       {
-        "provider": "generic", 
+        "provider": "generic",
         "url": "https://qny.luckyblank.cn/study-time-record/updates/"
       }
     ],
@@ -52,14 +53,15 @@
     }
   },
   "dependencies": {
-    "sqlite3": "^5.1.7",
     "electron-log": "^5.4.4",
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "electron": "^36.2.1",
     "electron-builder": "^26.0.12",
     "electron-rebuild": "^3.2.9",
+    "gsap": "^3.15.0",
     "nodemon": "^3.1.10"
   }
 }
